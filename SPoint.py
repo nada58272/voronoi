@@ -124,32 +124,52 @@ def dist_to_s(polyhedrons, s, vor4, delaunay, max_len):
         
     return min_dist_to_pol * 2 / max_len, coords_proj, index_proj
 
+# Достаточный набор комбинаций
+digits = np.array(list(product(
+	[0, 1, 2], 
+	[0, 1, -1, 2, -2], 
+	[0, 1, -1, 2, -2], 
+	[0, 1, -1, 2, -2], 
+)))
+
+
+# Удаляем нулевую точку
+#! можно оптимизировать еще на этом этапе: не включать в список элементы вида [0, negative, ..., ...], [0, 0, negative, ...], [0, 0, 0, negative]
+digits = digits[~np.all(digits == 0, axis=1)]
 
 
 # ищет точку s для подрешетки
+# digits уже определен!
 
-def s_point(sub_grid, vor4):
-    digits = np.array(list(product(range(-2, 2), repeat=4)))  # Все комбинации
+def s_point(sub_grid, vor4):   
     coords4_1 = np.dot(digits, sub_grid)  # Все точки подрешётки
     
-    # Удаляем нулевую точку
-    coords4_1 = coords4_1[~np.all(coords4_1 == 0, axis=1)]
-    
-    # Минимальное расстояние между точками
-    if len(coords4_1) >= 2:
-        dist_matrix = distance.pdist(coords4_1)
-        min_dist = np.min(dist_matrix)
-        if min_dist <= 2:
-            return np.array([0, 0, 0, 0])
-
-
     # Поиск общей точки с coords4
     common_coord = np.array([x for x in coords4_1 if x.tolist() in vor4.coords4])
     if len(common_coord) == 0:
         return np.array([0, 0, 0, 0])
     
-
     # Ближайшая к центру точка
     dist_to_center = np.linalg.norm(common_coord, axis=1)
     closest_idx = np.argmin(dist_to_center)
     return common_coord[closest_idx] * 0.5
+
+
+def center_points(sub_grid):       
+    grid_points = np.dot(digits, sub_grid)  # Все точки подрешётки для данного набора комбинаций
+    points = []
+    
+    # оцениваем минимальное расстояние между центрами многогранников
+    central_dist_min = np.linalg.norm(grid_points[0])
+    for point in grid_points:
+        central_dist = np.linalg.norm(point)
+        if central_dist < central_dist_min:
+            central_dist = central_dist_min
+
+    # отбираем точки для тех многогранников, расстояние от центра до центра которых не более central_dist_min + diameter
+    for point in grid_points:
+        central_dist = np.linalg.norm(point)
+        if central_dist < central_dist_min + 2:
+            points.append(np.array(point))
+
+    return points
