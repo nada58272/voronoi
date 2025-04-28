@@ -72,3 +72,6 @@ def pad_lists_with_ones(list_of_lists):
             # Добавляем в начало столько единиц, сколько не хватает до 4
             list_of_lists[i] = [1] * (4 - len(list_of_lists[i])) + list_of_lists[i]
     return list_of_lists
+
+
+

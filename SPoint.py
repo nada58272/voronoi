@@ -25,9 +25,37 @@ from VoronoiPolyhedra import *
 from FindSubGrids import *
 
 
+def find_faces_from_nearest_vertices(s, central, vertex_to_faces):
+    """
+    Находит грани, связанные с ближайшими вершинами к заданной точке s.
+
+    :param s: np.array, координаты точки, от которой ищется расстояние.
+    :param central: list of np.array, список вершин.
+    :param vertex_to_faces: dict, словарь, где ключ - индекс вершины, значение - список граней, содержащих эту вершину.
+    :return: set, множество общих граней, связанных с ближайшими вершинами.
+    """
+    min_dist_vert_to_s = float('inf')
+    min_dist_to_s_list = []
+
+    # Находим ближайшие вершины к точке s
+    for index in range(len(central)):
+        dist_vert_to_s = distance.euclidean(s, central[index])
+
+        if dist_vert_to_s == min_dist_vert_to_s:
+            min_dist_to_s_list.append(index)
+        elif dist_vert_to_s < min_dist_vert_to_s:
+            min_dist_vert_to_s = dist_vert_to_s
+            min_dist_to_s_list = [index]
+
+    # Находим пересечение граней, связанных с ближайшими вершинами
+    selected_lists = [set(vertex_to_faces[i]) for i in min_dist_to_s_list]
+    common_elements = set.intersection(*selected_lists)
+
+    return common_elements
 
 
-# через минимальное расстояние до вершины
+
+
 
 def dist_to_s(polyhedrons, s, vor4, delaunay, max_len):
     
@@ -37,7 +65,7 @@ def dist_to_s(polyhedrons, s, vor4, delaunay, max_len):
     min_vert = -1
 
     # находим ближайшую вершину к точке s
-    
+    '''
     for index in range(len(vor4.central)):
 
         dist_vert_to_s = distance.euclidean(s, vor4.central[index])
@@ -45,11 +73,12 @@ def dist_to_s(polyhedrons, s, vor4, delaunay, max_len):
         if dist_vert_to_s < min_dist_vert_to_s:
             min_dist_vert_to_s = dist_vert_to_s
             min_vert = index
-        
+    '''    
+    nearest_faces = find_faces_from_nearest_vertices(s, vor4.central, vor4.vertex_to_faces)
 
     # находим расстояние и проекцию на центральный многогранник
     
-    for i in vor4.vertex_to_faces[min_vert]: # рассматриваем только грани,которым принадлежит ближайшая в точке s вершина
+    for i in nearest_faces:#vor4.vertex_to_faces[min_vert]: # рассматриваем только грани,которым принадлежит ближайшая в точке s вершина
         # coord0 = s - (d0 + polyhedrons[i].bias)* polyhedrons[i].normal
         d0 = polyhedrons[i].normal @ (s - polyhedrons[i].center)
         coord0 = s - d0 * polyhedrons[i].normal
@@ -71,7 +100,7 @@ def dist_to_s(polyhedrons, s, vor4, delaunay, max_len):
                 # coord1 = coord0 - (d1 + face2d.bias)* polyhedrons[i].normal
                 coord1 = coord0 - d1 * face2d.normal
                 simplex = delaunay.find_simplex(coord1)
-
+                
                 if simplex != -1: # если проекция принадлежит центральному многораннику
                     dist = distance.euclidean(s, coord1)#, dtype = 'float')
                     coords_to_central = coord1
@@ -88,7 +117,7 @@ def dist_to_s(polyhedrons, s, vor4, delaunay, max_len):
                         #coord2 = coord1 - (d2 + edge.bias) * edge.normal
                         coord2 = coord1 - d2 * edge.normal
                         simplex = delaunay.find_simplex(coord2)
-
+                        
                         if simplex != -1: # если проекция принадлежит центральному многораннику
                             dist = distance.euclidean(s, coord2)#, dtype = 'float')
                             coords_to_central = coord2
@@ -101,7 +130,7 @@ def dist_to_s(polyhedrons, s, vor4, delaunay, max_len):
                         else:
                             d3 = distance.euclidean(s, edge.vertex1)
                             d4 = distance.euclidean(s, edge.vertex2)
-
+                            #print('3, 4', d3, d4)
                             if d3 < d4:
                                 dist = d3
                                 coords_to_central = edge.vertex1
