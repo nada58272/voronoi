@@ -1,23 +1,8 @@
 import numpy as np
-from scipy.spatial import Voronoi
-from scipy.spatial import distance
-from sympy import symbols, Eq, solve
-import math
-import itertools
-import copy
-from scipy.spatial import Delaunay
-import pandas as pd
-import sys
-from numpy import linalg as la
-from itertools import *
-from copy import deepcopy
-from collections import defaultdict
+from scipy.spatial import Voronoi, Delaunay, ConvexHull, distance
+from itertools import product, combinations
 
-from itertools import combinations
-from math import prod
-from sympy import factorint
-
-
+#--------------------------------------------------------------------------------
 
 class Edge2D:
     def __init__(self, vertex1, vertex2, face_center):
@@ -49,6 +34,8 @@ class Edge2D:
     def __repr__(self):
         return f"Edge2D(vertex1={self.vertex1}, vertex2={self.vertex2}, normal={self.normal}, \
                 midpoint={self.center})"
+
+#--------------------------------------------------------------------------------
 
 class Face2D:
     def __init__(self, vertices, polyhedron_center, vor4):
@@ -110,6 +97,7 @@ class Face2D:
         return (f"Face2D(vertices={self.vertices}), center={self.center}, "
                 f"normal={self.normal}")
 
+#--------------------------------------------------------------------------------
 
 class Face3D:
     def __init__(self, vertices, faces_list, normal, vor4):
@@ -160,8 +148,7 @@ class Face3D:
         return (f"Face3D(vertices={self.vertices}, normal={self.normal}, "
                 f"center={self.center}, faces={self.faces})")
 
-
-
+#--------------------------------------------------------------------------------
 
 class VoronoiPolyhedra(Voronoi):
 	def __init__(self, grid):
@@ -170,15 +157,14 @@ class VoronoiPolyhedra(Voronoi):
 		self.coords4 = [] # координаты центров
 
 		# меньше 3 нельзя - не хватает точке для подсчета
-		for var in itertools.product(range(-3, 3), repeat=4):
+		for var in product(range(-3, 3), repeat=4):
 			self.coords4.append((self.grid.T).dot(var).tolist())
    
 		# строим диаграмму Вороного
 		super().__init__(self.coords4)
     
 	def fillData(self):
-		#! переименовать в central_point_index
-		self.centr_index = self.coords4.index([0.0, 0.0, 0.0, 0.0])
+		self.central_point_index = self.coords4.index([0.0, 0.0, 0.0, 0.0])
 
 	def findCentral(self):
 		# находим суммарные расстояния от вершин многогранников до (0, 0, 0, 0) (sum_dist), затем находим минимальное 
@@ -207,8 +193,7 @@ class VoronoiPolyhedra(Voronoi):
 
 		print ('суммарное расстояние =', sum_dist_min, 'индекс центрального региона =', v_min)
 
-		#! переименовать в central_region_index
-		self.central_index = self.regions[v_min] # индексы координат (в coord4) центрального региона
+		self.central_region_index = self.regions[v_min] # индексы координат (в coord4) центрального региона
 		self.central = self.vertices[self.regions[v_min]]
 
 	def findFaces3d(self):
@@ -221,7 +206,7 @@ class VoronoiPolyhedra(Voronoi):
 
 		for ridge in self.ridge_vertices:
 			
-			if np.all(np.isin(ridge, self.central_index)):
+			if np.all(np.isin(ridge, self.central_region_index)):
 				self.central_3d.append(self.vertices[ridge])
 				self.faces_3d.append(ridge)
 
@@ -299,9 +284,9 @@ class VoronoiPolyhedra(Voronoi):
 
 		for pair in self.ridge_points:
 
-			if self.centr_index not in pair: continue
+			if self.central_point_index not in pair: continue
 
-			if pair[0] == self.centr_index:
+			if pair[0] == self.central_point_index:
 				
 				# если в списке 4 многогранника есть вершины хоть одой 3 грани центрального многогранника
 				# то этот многогранник соседний с центральным
@@ -324,7 +309,6 @@ class VoronoiPolyhedra(Voronoi):
 
 
 		# перебираем все соседние центры
-
 		for point in self.list_neigh_points:
 			
 			min_dist_point_edge = 1000
@@ -342,9 +326,6 @@ class VoronoiPolyhedra(Voronoi):
 				# если суммарное растояние меньше минимального, записываем новое суммарное растояние и индекс грани    
 				if min_dist_point_edge > dist_point_edge:
 					min_dist_point_edge = dist_point_edge
-					point_edge = edge
-
-			#v_min = next((i for i, arr in enumerate(self.regions) if np.array_equal(arr, v_min)), None)
 
 			self.list_ridge_edge.append(edge)
 
@@ -352,22 +333,18 @@ class VoronoiPolyhedra(Voronoi):
 	# строим список 2d граней 3d граней
 	def find_2d_subfaces(self):
 		self.list_faces = []
-		list_vert_3d = []
 		for face3d in self.faces_2d:
+      
 			list_vert_3d = []
-			
 			for face2d in face3d:
+       
 				list_verts = []
 				for vert in face2d:
-					
 					list_verts.append(self.vertices[vert])
 
-				#print(list_verts)	
 				list_vert_3d.append(list_verts) 
-				#print()
+
 			self.list_faces.append(list_vert_3d)
-			#print(22, self.list_faces)
-		#print(11, self.list_faces)
 		
 
 
@@ -383,7 +360,7 @@ class VoronoiPolyhedra(Voronoi):
 
 	def get_vertex_faces_3d(self):
 		self.vertex_to_faces = [] # собой список списков 3D-граней для каждой вершины 
-							# (где индексы граней берутся из edge_central_coords)
+								  # (где индексы граней берутся из edge_central_coords)
 		'''    
 		берем каждую верщину из central и перебираем все 3х мерные грани - смотрим есть ли данная вершина в этой 
 		3х мерной грани если да, то тдобавляем ее в список
@@ -391,9 +368,7 @@ class VoronoiPolyhedra(Voronoi):
 		for vertex in self.central:
 			
 			tamp_list = [] # список граней для текущей вершины
-			
 			for face in range(len(self.edge_central_coords)):
-
 				if np.any(np.all(self.edge_central_coords[face] == vertex, axis=1)):
 					tamp_list.append(face)
 					
@@ -408,3 +383,50 @@ class VoronoiPolyhedra(Voronoi):
 			polyhedron = Face3D(self.edge_central_coords[face_index], self.list_faces[face_index], self.v_norm[face_index], self)
 			self.polyhedrons.append(polyhedron)
 
+	def createTriangulation(self):
+        # строим триангуляцию
+		self.delaunay = Delaunay(self.central)
+
+		# Получаем все вершины симплексов
+		simplices_vertices = self.delaunay.simplices
+
+		# Уникальные вершины
+		unique_vertices = np.unique(simplices_vertices)
+
+		# Проверяем, что все точки из central используются
+		if len(unique_vertices) == len(self.central):
+			print('Все точки используются в триангуляции.')
+		else:
+			print('Не все точки используются в триангуляции.')
+
+		# Выпуклая оболочка исходных точек
+		original_hull = ConvexHull(self.central)
+
+		# Все точки триангуляции
+		triangulated_points = self.central[self.delaunay.simplices.flatten()]
+
+		# Выпуклая оболочка точек триангуляции
+		triangulated_hull = ConvexHull(triangulated_points)
+
+		# Сравнение объемов выпуклых оболочек
+		is_convex_hull_correct = np.isclose(original_hull.volume, triangulated_hull.volume)
+		print('Выпуклость триангуляции сохранена:', is_convex_hull_correct)
+
+	def build(self):
+		self.findCentral()
+		self.fillData()
+		self.findFaces3d()
+		self.findFaces2d()
+		self.findEdges()
+		self.findNeigh()
+
+		# диаметр многогранника (ищем максимальное расстояние между вершинами) - 2
+		self.max_len = round(2 * distance.euclidean(np.array([0, 0, 0, 0]), self.central[1]), 10)
+		self.min_d = 1
+
+		self.find_2d_subfaces()
+		self.count_v_norm()
+		self.createPolyhedrons()
+		self.get_vertex_faces_3d()
+  
+		self.createTriangulation()

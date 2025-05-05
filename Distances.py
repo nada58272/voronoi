@@ -1,29 +1,7 @@
-import numpy as np
-from scipy.spatial import Voronoi
-from scipy.spatial import distance
-from sympy import symbols, Eq, solve
-import math
-import itertools
-import copy
-from scipy.spatial import Delaunay
-import pandas as pd
-import sys
-from numpy import linalg as la
-from itertools import *
-from copy import deepcopy
-from collections import defaultdict
+from Polyhedra import *
+from Factorization import *
 
-from itertools import combinations
-from math import prod
-from sympy import factorint
-
-
-from scipy.spatial import distance
-
-from VoronoiPolyhedra import *
-
-from FindSubGrids import *
-
+#--------------------------------------------------------------------------------
 
 def find_faces_from_nearest_vertices(s, central, vertex_to_faces):
     """
@@ -53,11 +31,9 @@ def find_faces_from_nearest_vertices(s, central, vertex_to_faces):
 
     return common_elements
 
+#--------------------------------------------------------------------------------
 
-
-
-
-def dist_to_s(polyhedrons, s, vor4, delaunay, max_len):
+def dist_to_s(polyhedrons, s, vor4):
     
     min_dist_to_pol = float('inf')
     index_proj = -1
@@ -82,7 +58,7 @@ def dist_to_s(polyhedrons, s, vor4, delaunay, max_len):
         # coord0 = s - (d0 + polyhedrons[i].bias)* polyhedrons[i].normal
         d0 = polyhedrons[i].normal @ (s - polyhedrons[i].center)
         coord0 = s - d0 * polyhedrons[i].normal
-        simplex = delaunay.find_simplex(coord0)
+        simplex = vor4.delaunay.find_simplex(coord0)
         
         if simplex != -1: # если проекция принадлежит центральному многораннику
             dist = abs(d0)
@@ -99,7 +75,7 @@ def dist_to_s(polyhedrons, s, vor4, delaunay, max_len):
                 d1 = face2d.normal @ (coord0 - face2d.center)
                 # coord1 = coord0 - (d1 + face2d.bias)* polyhedrons[i].normal
                 coord1 = coord0 - d1 * face2d.normal
-                simplex = delaunay.find_simplex(coord1)
+                simplex = vor4.delaunay.find_simplex(coord1)
                 
                 if simplex != -1: # если проекция принадлежит центральному многораннику
                     dist = distance.euclidean(s, coord1)#, dtype = 'float')
@@ -116,7 +92,7 @@ def dist_to_s(polyhedrons, s, vor4, delaunay, max_len):
                         d2 = edge.normal @ (coord1 - edge.center)
                         #coord2 = coord1 - (d2 + edge.bias) * edge.normal
                         coord2 = coord1 - d2 * edge.normal
-                        simplex = delaunay.find_simplex(coord2)
+                        simplex = vor4.delaunay.find_simplex(coord2)
                         
                         if simplex != -1: # если проекция принадлежит центральному многораннику
                             dist = distance.euclidean(s, coord2)#, dtype = 'float')
@@ -144,16 +120,15 @@ def dist_to_s(polyhedrons, s, vor4, delaunay, max_len):
                                 coords_proj = coords_to_central
                                 index_proj = i
         
-        
         # если расстояние до какой-либо грани < 1, то дальше не считаем
         if  min_dist_to_pol < 1:
-
             return min_dist_to_pol, coords_proj, index_proj
-
         
-    return min_dist_to_pol * 2 / max_len, coords_proj, index_proj
+    return min_dist_to_pol * 2 / vor4.max_len, coords_proj, index_proj
 
+#--------------------------------------------------------------------------------
 # Достаточный набор комбинаций
+
 digits = np.array(list(product(
 	[0, 1, 2], 
 	[0, 1, -1, 2, -2], 
@@ -161,12 +136,11 @@ digits = np.array(list(product(
 	[0, 1, -1, 2, -2], 
 )))
 
-
 # Удаляем нулевую точку
 #! можно оптимизировать еще на этом этапе: не включать в список элементы вида [0, negative, ..., ...], [0, 0, negative, ...], [0, 0, 0, negative]
 digits = digits[~np.all(digits == 0, axis=1)]
 
-
+#--------------------------------------------------------------------------------
 # ищет точку s для подрешетки
 # digits уже определен!
 
@@ -183,6 +157,7 @@ def s_point(sub_grid, vor4):
     closest_idx = np.argmin(dist_to_center)
     return common_coord[closest_idx] * 0.5
 
+#--------------------------------------------------------------------------------
 
 def center_points(sub_grid):       
     grid_points = np.dot(digits, sub_grid)  # Все точки подрешётки для данного набора комбинаций

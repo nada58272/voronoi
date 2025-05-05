@@ -1,9 +1,11 @@
 import numpy as np
 from itertools import product
 from fpylll import IntegerMatrix, LLL
-from FindSubGrids import *
 
-from SPoint import *
+from Distances import *
+from Factorization import *
+
+#--------------------------------------------------------------------------------
 
 def lattice_points_no_central_symmetry(basis, limits, coeff_dist, max_len):
     """
@@ -56,23 +58,21 @@ def lattice_points_no_central_symmetry(basis, limits, coeff_dist, max_len):
     
     return points
 
-def find_dist_for_det(det_range, limits, max_len, grid, vor4, delaunay):
+#--------------------------------------------------------------------------------
+
+def find_optimal(det_range, limits, grid, vor4):
     """
     Основная функция для выполнения алгоритма поиска матриц и расстояний.
 
     :param det_range: range или список определителей для обработки.
     :param limits: целое число, задающее границы генерации коэффициентов.
-    :param max_len: максимальная длина для нормализации расстояний.
     :param grid: исходная решётка (numpy.ndarray).
     :param vor4: объект с многогранниками Вороного.
-    :param delaunay: объект триангуляции Делоне.
     :return: словари det_dist, det_center, det_mat с результатами.
     """
+    
     # Инициализация словарей для хранения результатов
     centers_dist = dict() 
-
-
-    #norm_length = 1 / max_len
 
     det_dist = dict() # словарь где ключ - определитель, значение - расстояние
     det_center = dict() # словарь где ключ - определитель, значение - координаты точки s
@@ -80,7 +80,9 @@ def find_dist_for_det(det_range, limits, max_len, grid, vor4, delaunay):
 
     for det in det_range:
 
-        print(det)
+        print("\r                                                          ")
+        print("---------------------------------")
+        print("det:", det)
         
         list_all_factorizations = compute_factorizations(det)
         list_diag_el = pad_lists_with_ones(list_all_factorizations)
@@ -99,19 +101,27 @@ def find_dist_for_det(det_range, limits, max_len, grid, vor4, delaunay):
             max_num_col3 = diag_el[3]
             max_num_col2 = diag_el[2]
             max_num_col1 = diag_el[1]
-            print(max_num_col1, max_num_col2, max_num_col3)
+            
+            num_iterations = diag_el[1] * diag_el[2] * diag_el[2] * diag_el[3] * diag_el[3] * diag_el[3]
+            iter = 0
+            
+            print("\r                                                          ")
+            print("▶ diag factors:", diag_el[1], diag_el[2], diag_el[3], "   iters:", num_iterations)
 
             for indices in product(range(max_num_col3), range(max_num_col3), range(max_num_col2),
-                                range(max_num_col3), range(max_num_col2), range(max_num_col1)):
-                i1, i2, i3, i4, i5, i6 = indices
-                mat[2][3] = i1
-                mat[1][3] = i2
-                mat[1][2] = i3
-                mat[0][3] = i4
-                mat[0][2] = i5
-                mat[0][1] = i6
+                                   range(max_num_col3), range(max_num_col2), range(max_num_col1)):
 
-                
+                mat[2][3] = indices[0]
+                mat[1][3] = indices[1]
+                mat[1][2] = indices[2]
+                mat[0][3] = indices[3]
+                mat[0][2] = indices[4]
+                mat[0][1] = indices[5]
+
+                iter += 1
+                if iter % 500 == 0:
+                    print("\r[", int(10000 * iter / num_iterations) / 100, "% ]", "   iter:", iter, end = '')
+                    
                 sub_grid = np.dot(mat, grid)
                 sub_grid_int = (sub_grid).astype(int)
                 basis = LLL.reduction(IntegerMatrix.from_matrix(sub_grid_int.tolist()))
@@ -119,9 +129,8 @@ def find_dist_for_det(det_range, limits, max_len, grid, vor4, delaunay):
                 sub_grid_LLL = np.array([[basis[i, j] for j in range(cols)] for i in range(rows)])
 
 
-                centers = lattice_points_no_central_symmetry(sub_grid_LLL, limits,\
-                                                            3, max_len)
-                min_dist_mat = 2 * max_len
+                centers = lattice_points_no_central_symmetry(sub_grid_LLL, limits, 3, vor4.max_len)
+                min_dist_mat = 2 * vor4.max_len
 
                 if len(centers) == 1 and np.array_equal(centers[0], np.array([0, 0, 0, 0])):
                     continue
@@ -133,7 +142,7 @@ def find_dist_for_det(det_range, limits, max_len, grid, vor4, delaunay):
                         dist = centers_dist[center_key]
                     else:
                         s = 0.5 * center
-                        dist, coords, ind = dist_to_s(vor4.polyhedrons, s, vor4, delaunay, max_len)
+                        dist, coords, ind = dist_to_s(vor4.polyhedrons, s, vor4)
                         # добавляем новое значение в centers_dist
                         centers_dist[center_key] = dist
 
@@ -141,15 +150,13 @@ def find_dist_for_det(det_range, limits, max_len, grid, vor4, delaunay):
                         min_dist_mat = dist
                         min_center = center
 
-                    if dist > min_dist_mat + max_len: continue
+                    if dist > min_dist_mat + vor4.max_len: continue
 
                     if min_dist_mat < 1: break
 
-
-
                 if min_dist_mat < 1: continue
-
-                print(min_dist_mat, min_center)
+                
+                print("\r", min_dist_mat, min_center)
 
                 # сохраняем значения для mat
                 list_mats.append(mat)
@@ -167,5 +174,4 @@ def find_dist_for_det(det_range, limits, max_len, grid, vor4, delaunay):
         
 
     return det_dist, det_center, det_mat
-
 
