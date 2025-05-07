@@ -5,6 +5,8 @@ from fpylll import IntegerMatrix, LLL
 from Distances import *
 from Factorization import *
 
+
+
 #--------------------------------------------------------------------------------
 
 def lattice_points_no_central_symmetry(basis, limits, coeff_dist, max_len):
@@ -127,7 +129,7 @@ def find_optimal(det_range, limits, grid, vor4):
                 basis = LLL.reduction(IntegerMatrix.from_matrix(sub_grid_int.tolist()))
                 rows, cols = basis.nrows, basis.ncols
                 sub_grid_LLL = np.array([[basis[i, j] for j in range(cols)] for i in range(rows)])
-
+                #sub_grid_LLL = LLL(sub_grid, 0.75)
 
                 centers = lattice_points_no_central_symmetry(sub_grid_LLL, limits, 3, vor4.max_len)
                 min_dist_mat = 2 * vor4.max_len
@@ -156,7 +158,7 @@ def find_optimal(det_range, limits, grid, vor4):
 
                 if min_dist_mat < 1: continue
                 
-                print("\r", min_dist_mat, min_center)
+                print("\r", min_dist_mat, min_center)#, mat, s, centers)
 
                 # сохраняем значения для mat
                 list_mats.append(mat)

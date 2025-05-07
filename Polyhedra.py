@@ -157,7 +157,7 @@ class VoronoiPolyhedra(Voronoi):
 		self.coords4 = [] # координаты центров
 
 		# меньше 3 нельзя - не хватает точке для подсчета
-		for var in product(range(-3, 3), repeat=4):
+		for var in product(range(-6, 6), repeat=4):
 			self.coords4.append((self.grid.T).dot(var).tolist())
    
 		# строим диаграмму Вороного
@@ -420,8 +420,16 @@ class VoronoiPolyhedra(Voronoi):
 		self.findEdges()
 		self.findNeigh()
 
+		def find_max_len():
+			max_len = 0
+			for i in range(len(self.central)):
+				a = distance.euclidean(self.central[i], np.array([0, 0, 0, 0]))
+				if a > max_len:
+					max_len = a
+			return max_len * 2
+		
 		# диаметр многогранника (ищем максимальное расстояние между вершинами) - 2
-		self.max_len = round(2 * distance.euclidean(np.array([0, 0, 0, 0]), self.central[1]), 10)
+		self.max_len = find_max_len()
 		self.min_d = 1
 
 		self.find_2d_subfaces()
