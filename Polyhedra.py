@@ -5,7 +5,7 @@ from itertools import product, combinations
 #--------------------------------------------------------------------------------
 
 class Edge2D:
-    def __init__(self, vertex1, vertex2, face_center):
+    def __init__(self, vertex1, vertex2, face_center, normal_2d, normal_3d):
         '''
         Инициализация ребра.
         :vertex1: Координаты первой вершины ребра.
@@ -15,14 +15,35 @@ class Edge2D:
         self.vertex1 = np.array(vertex1)
         self.vertex2 = np.array(vertex2)
         self.face_center = np.array(face_center)
+        self.normal_2d = normal_2d
+        self.normal_3d = normal_3d
+
+        def find_edge_normal(vertex1, vertex2, n_2d, n_3d):
+            # Вектор ребра
+            edge = vertex2 - vertex1
+
+            # Матрица условий ортогональности
+            A = np.vstack([edge, n_2d, n_3d]).T
+
+            # SVD разложение
+            U, S, Vt = np.linalg.svd(A)
+
+            # Нормаль к ребру - последний столбец U
+            n_edge = U[:, -1]
+
+            # Нормировка
+            n_edge = n_edge / np.linalg.norm(n_edge)
+
+            return n_edge
 
         # Вычисляем середину ребра
         self.center = (self.vertex1 + self.vertex2) / 2
 
         # Вычисляем нормаль к ребру
         #edge_vector = self.vertex2 - self.vertex1
-        self.normal = self.center - self.face_center  # Перпендикулярный вектор
-        self.normal = self.normal / np.linalg.norm(self.normal)  # Нормализация
+        #self.normal = self.center - self.face_center  # Перпендикулярный вектор
+        #self.normal = self.normal / np.linalg.norm(self.normal)  # Нормализация
+        self.normal = find_edge_normal(self.vertex1, self.vertex2, self.normal_2d, self.normal_3d)
         
         self.bias = self.normal @ vertex1
 
@@ -58,10 +79,18 @@ class Face2D:
 
     def _calculate_normal(self):
         # Вычисляем нормаль к грани как вектор из центра 3х мерного многогранника в центр 2х мерной грани
-        self.normal = np.array(self.center) - np.array(self.parent_center)
+        #self.normal = np.array(self.center) - np.array(self.parent_center)
+        v1 = self.vertices[0] - self.vertices[1]
+        v2 = self.vertices[0] - self.vertices[2]
+        A = np.column_stack((v1, v2, self.parent_center))
+        U, S, Vt = np.linalg.svd(A)
+        normal_3d = U[:, -1]
+        
+        #normal_3d = np.array(self.center) - np.array(self.parent_center)
 
         # Нормализуем нормаль
-        self.normal = self.normal / np.linalg.norm(self.normal)
+        self.normal = normal_3d / np.linalg.norm(normal_3d)
+        #return normal_3d
     
     # поиск ребер для 2х мерной грани (используется при создании класса)
     def find_edges(self):
@@ -87,8 +116,8 @@ class Face2D:
         found_edges = self.find_edges()        
         
         for vertex1, vertex2 in found_edges:
-            self.edges.append(Edge2D(vertex1, vertex2, self.center))
-
+            self.edges.append(Edge2D(vertex1, vertex2, self.center, self.normal, self.parent_center))
+            #self.edges.append(Edge2D(vertex1, vertex2, self.center))
     
     def __repr__(self):
         '''
@@ -157,7 +186,7 @@ class VoronoiPolyhedra(Voronoi):
 		self.coords4 = [] # координаты центров
 
 		# меньше 3 нельзя - не хватает точке для подсчета
-		for var in product(range(-6, 6), repeat=4):
+		for var in product(range(-3, 3), repeat=4):
 			self.coords4.append((self.grid.T).dot(var).tolist())
    
 		# строим диаграмму Вороного
@@ -187,6 +216,7 @@ class VoronoiPolyhedra(Voronoi):
 			if length < sum_dist_min:
 				sum_dist_min = length
 				v_min = region
+				print(sum_dist_min, v_min)
 
 		# ищу индекс минимального региона
 		v_min = next((i for i, arr in enumerate(self.regions) if np.array_equal(arr, v_min)), None)

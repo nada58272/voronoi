@@ -62,7 +62,7 @@ def lattice_points_no_central_symmetry(basis, limits, coeff_dist, max_len):
 
 #--------------------------------------------------------------------------------
 
-def find_optimal(det_range, limits, grid, vor4):
+def find_optimal(det_range, limits, grid, vor4, max_len):
     """
     Основная функция для выполнения алгоритма поиска матриц и расстояний.
 
@@ -144,7 +144,7 @@ def find_optimal(det_range, limits, grid, vor4):
                         dist = centers_dist[center_key]
                     else:
                         s = 0.5 * center
-                        dist, coords, ind = dist_to_s(vor4.polyhedrons, s, vor4)
+                        dist, coords, ind = dist_to_s(vor4.polyhedrons, s, vor4, max_len)
                         # добавляем новое значение в centers_dist
                         centers_dist[center_key] = dist
 

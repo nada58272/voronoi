@@ -2,6 +2,27 @@ from Polyhedra import *
 from Factorization import *
 
 #--------------------------------------------------------------------------------
+def update_min_distance(dist, coords, index,
+                        current_min_dist, current_coords, current_index):
+    """
+    Обновляет текущее минимальное расстояние и соответствующие координаты и индекс,
+    если новое расстояние меньше.
+
+    :param dist: float — новое расстояние
+    :param coords: np.array — координаты точки с этим расстоянием
+    :param index: int — индекс проекции (например, индекс многогранника)
+    :param current_min_dist: float — текущее минимальное расстояние
+    :param current_coords: np.array — текущие координаты проекции
+    :param current_index: int — текущий индекс
+
+    :return: (float, np.array, int) — обновлённые значения (min_dist, coords_proj, index_proj)
+    """
+    if dist < current_min_dist:
+        return dist, coords, index
+    else:
+        return current_min_dist, current_coords, current_index
+
+#--------------------------------------------------------------------------------
 
 def find_faces_from_nearest_vertices(s, central, vertex_to_faces):
     """
@@ -12,15 +33,19 @@ def find_faces_from_nearest_vertices(s, central, vertex_to_faces):
     :param vertex_to_faces: dict, словарь, где ключ - индекс вершины, значение - список граней, содержащих эту вершину.
     :return: set, множество общих граней, связанных с ближайшими вершинами.
     """
-    min_dist_vert_to_s = float('inf')
-    min_dist_to_s_list = []
+    min_dist_vert_to_s = float('inf') # минимальное расстояние до точки s
+    min_dist_to_s_list = [] # список индексов ближайших вершин
 
     # Находим ближайшие вершины к точке s
     for index in range(len(central)):
+        # считаем расстояние от вершины до точки s
         dist_vert_to_s = distance.euclidean(s, central[index])
 
+        # если расстояние равно минимальному, добавляем индекс в список
         if dist_vert_to_s == min_dist_vert_to_s:
             min_dist_to_s_list.append(index)
+
+        # если расстояние меньше минимального, обновляем минимальное и очищаем список
         elif dist_vert_to_s < min_dist_vert_to_s:
             min_dist_vert_to_s = dist_vert_to_s
             min_dist_to_s_list = [index]
@@ -33,12 +58,13 @@ def find_faces_from_nearest_vertices(s, central, vertex_to_faces):
 
 #--------------------------------------------------------------------------------
 
-def dist_to_s(polyhedrons, s, vor4):
+def dist_to_s(polyhedrons, s, vor4, max_len):
     
-    min_dist_to_pol = float('inf')
+    min_dist_to_pol = float('inf') #минимальное расстояние до центрального многогранника
     index_proj = -1
     min_dist_vert_to_s = float('inf')
     min_vert = -1
+    coords_proj = np.array([1, 1, 1, 1])
 
     # находим ближайшую вершину к точке s
     '''
@@ -49,7 +75,8 @@ def dist_to_s(polyhedrons, s, vor4):
         if dist_vert_to_s < min_dist_vert_to_s:
             min_dist_vert_to_s = dist_vert_to_s
             min_vert = index
-    '''    
+    ''' 
+    # находим список ближайших вершин к точке s   
     nearest_faces = find_faces_from_nearest_vertices(s, vor4.central, vor4.vertex_to_faces)
 
     # находим расстояние и проекцию на центральный многогранник
@@ -63,11 +90,18 @@ def dist_to_s(polyhedrons, s, vor4):
         if simplex != -1: # если проекция принадлежит центральному многораннику
             dist = abs(d0)
             coords_to_central = coord0
+            
+            min_dist_to_pol, coords_proj, index_proj = update_min_distance(dist, 
+                                                                            coords_to_central, 
+                                                                            i,
+                                                                            min_dist_to_pol,
+                                                                            coords_proj,
+                                                                            index_proj
+                                                                            )
 
-            if min_dist_to_pol > dist:
-                min_dist_to_pol = dist
-                coords_proj = coords_to_central
-                index_proj = i
+
+            #coords_to_central = s - (d0 + polyhedrons[i].bias) * polyhedrons[i].normal
+        
 
         else:
             for face2d in polyhedrons[i].faces: #cycle
@@ -80,12 +114,16 @@ def dist_to_s(polyhedrons, s, vor4):
                 if simplex != -1: # если проекция принадлежит центральному многораннику
                     dist = distance.euclidean(s, coord1)#, dtype = 'float')
                     coords_to_central = coord1
-
-                    if min_dist_to_pol > dist:
-                        min_dist_to_pol = dist
-                        coords_proj = coords_to_central
-                        index_proj = i
-
+                    
+                    min_dist_to_pol, coords_proj, index_proj = update_min_distance(dist, 
+                                                                           coords_to_central, 
+                                                                           i,
+                                                                           min_dist_to_pol,
+                                                                           coords_proj,
+                                                                           index_proj
+                                                                          )
+                    
+                    
                 else:
 
                     for edge in face2d.edges:
@@ -98,10 +136,14 @@ def dist_to_s(polyhedrons, s, vor4):
                             dist = distance.euclidean(s, coord2)#, dtype = 'float')
                             coords_to_central = coord2
 
-                            if min_dist_to_pol > dist:
-                                min_dist_to_pol = dist
-                                coords_proj = coords_to_central
-                                index_proj = i
+                            
+                            min_dist_to_pol, coords_proj, index_proj = update_min_distance(dist, 
+                                                                           coords_to_central, 
+                                                                           i,
+                                                                           min_dist_to_pol,
+                                                                           coords_proj,
+                                                                           index_proj
+                                                                          )
 
                         else:
                             d3 = distance.euclidean(s, edge.vertex1)
@@ -114,17 +156,24 @@ def dist_to_s(polyhedrons, s, vor4):
                                 dist = d4
                                 coords_to_central = edge.vertex2
 
-                            if min_dist_to_pol > dist:
-            
-                                min_dist_to_pol = dist
-                                coords_proj = coords_to_central
-                                index_proj = i
-        
+                            min_dist_to_pol, coords_proj, index_proj = update_min_distance(
+                                                                        dist, 
+                                                                        coords_to_central, 
+                                                                        i,
+                                                                        min_dist_to_pol,
+                                                                        coords_proj,
+                                                                        index_proj
+                                                                        )
+     
+                            
         # если расстояние до какой-либо грани < 1, то дальше не считаем
+    
+        min_dist_to_pol = min_dist_to_pol * 2 / max_len
+        
         if  min_dist_to_pol < 1:
             return min_dist_to_pol, coords_proj, index_proj
-        
-    return min_dist_to_pol * 2 / vor4.max_len, coords_proj, index_proj
+
+    return min_dist_to_pol, coords_proj, index_proj
 
 #--------------------------------------------------------------------------------
 # Достаточный набор комбинаций
