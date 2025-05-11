@@ -151,6 +151,9 @@ def find_optimal(det_range, limits, grid, vor4, max_len):
                     if dist < min_dist_mat:
                         min_dist_mat = dist
                         min_center = center
+                        min_mat = mat
+                        min_sub_grid_LLL = sub_grid_LLL
+                        min_sub_grid = sub_grid
 
                     if dist > min_dist_mat + vor4.max_len: continue
 
@@ -158,7 +161,7 @@ def find_optimal(det_range, limits, grid, vor4, max_len):
 
                 if min_dist_mat < 1: continue
                 
-                print("\r", min_dist_mat, min_center)#, mat, s, centers)
+                print("\r", min_dist_mat, min_center, min_mat, min_sub_grid_LLL, min_sub_grid)#, s, centers)
 
                 # сохраняем значения для mat
                 list_mats.append(mat)
