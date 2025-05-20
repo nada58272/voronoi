@@ -1,11 +1,30 @@
 import numpy as np
 from itertools import product
-from fpylll import IntegerMatrix, LLL
+#from fpylll import IntegerMatrix, LLL
 
 from Distances import *
 from Factorization import *
+from LLL import *
 
+# Файл для логирования результатов
+output_file = "results.txt"
 
+def write_result_to_file(grid, det, mat, center, distance):
+    """
+    Записывает результаты в файл.
+    :param grid: исходная решётка (numpy.ndarray)
+    :param det: определитель матрицы
+    :param mat: текущая матрица перехода (numpy.ndarray)
+    :param center: координаты точки (numpy.ndarray)
+    :param distance: расстояние до многогранника
+    """
+    with open(output_file, 'a') as f:  # 'a' - append mode
+        f.write(f"Grid: {grid.tolist()}\n")
+        f.write(f"Determinant: {det}\n")
+        f.write(f"Matrix:\n{mat.tolist()}\n")
+        f.write(f"Center: {center.tolist()}\n")
+        f.write(f"Distance: {distance:.6f}\n")
+        f.write("-" * 50 + "\n")
 
 #--------------------------------------------------------------------------------
 
@@ -23,6 +42,7 @@ def lattice_points_no_central_symmetry(basis, limits, coeff_dist, max_len):
     # Инициализируем список для хранения точек
     points = []
     r_max = coeff_dist * max_len
+    
 
     # Генерируем все возможные целочисленные комбинации коэффициентов
     for coeffs in product(range(-limits, limits + 1), repeat=4):
@@ -125,12 +145,14 @@ def find_optimal(det_range, limits, grid, vor4, max_len):
                     print("\r[", int(10000 * iter / num_iterations) / 100, "% ]", "   iter:", iter, end = '')
                     
                 sub_grid = np.dot(mat, grid)
-                sub_grid_int = (sub_grid).astype(int)
-                basis = LLL.reduction(IntegerMatrix.from_matrix(sub_grid_int.tolist()))
-                rows, cols = basis.nrows, basis.ncols
-                sub_grid_LLL = np.array([[basis[i, j] for j in range(cols)] for i in range(rows)])
-                #sub_grid_LLL = LLL(sub_grid, 0.75)
 
+                #sub_grid_int = (sub_grid).astype(int)
+                #basis = LLL.reduction(IntegerMatrix.from_matrix(sub_grid_int.tolist()))
+                #rows, cols = basis.nrows, basis.ncols
+                #sub_grid_LLL = np.array([[basis[i, j] for j in range(cols)] for i in range(rows)])
+                
+                sub_grid_LLL = LLL(sub_grid, 0.75)
+               # print(sub_grid_LLL)
                 centers = lattice_points_no_central_symmetry(sub_grid_LLL, limits, 3, vor4.max_len)
                 min_dist_mat = 2 * vor4.max_len
 
@@ -150,10 +172,10 @@ def find_optimal(det_range, limits, grid, vor4, max_len):
 
                     if dist < min_dist_mat:
                         min_dist_mat = dist
-                        min_center = center
-                        min_mat = mat
-                        min_sub_grid_LLL = sub_grid_LLL
-                        min_sub_grid = sub_grid
+                        min_center = center.copy()
+                        min_mat = mat.copy()
+                        min_sub_grid_LLL = sub_grid_LLL.copy()
+                        min_sub_grid = sub_grid.copy()
 
                     if dist > min_dist_mat + vor4.max_len: continue
 
@@ -161,7 +183,7 @@ def find_optimal(det_range, limits, grid, vor4, max_len):
 
                 if min_dist_mat < 1: continue
                 
-                print("\r", min_dist_mat, min_center, min_mat, min_sub_grid_LLL, min_sub_grid)#, s, centers)
+                print("\r", min_dist_mat, min_center, min_mat)#, min_sub_grid_LLL, min_sub_grid)#, s, centers)
 
                 # сохраняем значения для mat
                 list_mats.append(mat)
@@ -177,6 +199,6 @@ def find_optimal(det_range, limits, grid, vor4, max_len):
             det_center[det] = mat_center[max_pair[0]] # ключ - определитель, значение - координаты центра
             det_mat[det] = list_mats[max_pair[0]] # ключ - определитель, значение - матрица mat
         
-
+            write_result_to_file(grid, det, list_mats[max_pair[0]], mat_center[max_pair[0]], max_pair[1])
     return det_dist, det_center, det_mat
 

@@ -12,29 +12,41 @@ class Edge2D:
         :vertex2: Координаты второй вершины ребра.
         :face_center: Координаты центра грани.
         '''
-        self.vertex1 = np.array(vertex1)
-        self.vertex2 = np.array(vertex2)
-        self.face_center = np.array(face_center)
-        self.normal_2d = normal_2d
-        self.normal_3d = normal_3d
+
+        self.vertex1 = np.array(vertex1) # координаты вершин
+        self.vertex2 = np.array(vertex2) # координаты вершин
+        self.face_center = np.array(face_center) # Центр 2D-грани
+        self.normal_2d = normal_2d # Нормаль к 2D-грани
+        self.normal_3d = normal_3d # Нормаль к 3D-гиперграни
 
         def find_edge_normal(vertex1, vertex2, n_2d, n_3d):
             # Вектор ребра
             edge = vertex2 - vertex1
-
-            # Матрица условий ортогональности
-            A = np.vstack([edge, n_2d, n_3d]).T
+            # Проверка, не вырождено ли само ребро
+            if np.linalg.norm(edge) < 1e-9:
+                # print(f"Warning: Degenerate edge in Edge2D ({v1}, {v2}). Returning zero normal.")
+                return np.zeros_like(vertex1) # Возвращаем нулевой вектор той же размерности
+            
+			# Матрица условий ортогональности
+            #A = np.vstack([edge, n_2d, n_3d]).T
+            A = np.column_stack((edge, n_2d, n_3d))
 
             # SVD разложение
-            U, S, Vt = np.linalg.svd(A)
 
-            # Нормаль к ребру - последний столбец U
-            n_edge = U[:, -1]
+            try:
+                U, S, Vt = np.linalg.svd(A)
 
+				# Нормаль к ребру - последний столбец U
+                n_edge_candidate = U[:, -1]
+
+            except np.linalg.LinAlgError:
+                # print(f"Warning: SVD failed in Edge2D for edge ({v1}, {v2}). Returning zero normal.")
+                return np.zeros_like(vertex1)
+			
             # Нормировка
-            n_edge = n_edge / np.linalg.norm(n_edge)
+            #n_edge = n_edge / np.linalg.norm(n_edge)
 
-            return n_edge
+            return n_edge_candidate
 
         # Вычисляем середину ребра
         self.center = (self.vertex1 + self.vertex2) / 2
@@ -43,14 +55,33 @@ class Edge2D:
         #edge_vector = self.vertex2 - self.vertex1
         #self.normal = self.center - self.face_center  # Перпендикулярный вектор
         #self.normal = self.normal / np.linalg.norm(self.normal)  # Нормализация
-        self.normal = find_edge_normal(self.vertex1, self.vertex2, self.normal_2d, self.normal_3d)
+        normal_candidate = find_edge_normal(self.vertex1, self.vertex2, self.normal_2d, self.normal_3d)
         
-        self.bias = self.normal @ vertex1
+        # Проверка на вырожденность и нормализация
+        norm_val = np.linalg.norm(normal_candidate)
+        if norm_val < 1e-9:
+            # print(f"Warning: Degenerate normal calculated for Edge2D ({self.vertex1}, {self.vertex2}). Setting to zero vector.")
+            self.normal = np.zeros_like(normal_candidate)
+            self.bias = 0.0
+            
+        else:
+            oriented_normal = normal_candidate / norm_val
+
+            # Проверяем и корректируем направление нормали (она должна быть направлена "наружу" от центра 2D-грани)
+            vector_to_face_center = self.face_center - self.center
+            if np.dot(oriented_normal, vector_to_face_center) > 0:
+                self.normal = -oriented_normal
+            else:
+                self.normal = oriented_normal
+            
+            self.bias = self.normal @ self.vertex1
+
+        #self.bias = self.normal @ self.vertex1
 
         # Проверяем направление нормали (она должна быть направлена от центра грани)
-        vector_to_center = self.face_center - self.center
-        if np.dot(self.normal, vector_to_center) > 0:
-            self.normal = -self.normal  # Меняем направление нормали
+        #vector_to_center = self.face_center - self.center
+        #if np.dot(self.normal, vector_to_center) > 0:
+         #   self.normal = -self.normal  # Меняем направление нормали
 
     def __repr__(self):
         return f"Edge2D(vertex1={self.vertex1}, vertex2={self.vertex2}, normal={self.normal}, \
@@ -59,12 +90,13 @@ class Edge2D:
 #--------------------------------------------------------------------------------
 
 class Face2D:
-    def __init__(self, vertices, polyhedron_center, vor4):
+    def __init__(self, vertices, polyhedron_center, vor4, normal_parent):
         '''
         Инициализация 2D грани многогранника.
         '''
         self.vertices = vertices  # Координаты вершин грани
         self.vor4 = vor4
+        self.parent_normal = normal_parent # нормаль к многограннику
         self.parent_center = polyhedron_center # центр 3х мерной грани
         self._calculate_center()  # Центр грани
         self._calculate_normal()  # Нормаль к грани
@@ -82,15 +114,33 @@ class Face2D:
         #self.normal = np.array(self.center) - np.array(self.parent_center)
         v1 = self.vertices[0] - self.vertices[1]
         v2 = self.vertices[0] - self.vertices[2]
-        A = np.column_stack((v1, v2, self.parent_center))
+        A = np.column_stack((v1, v2, self.parent_normal))
         U, S, Vt = np.linalg.svd(A)
-        normal_3d = U[:, -1]
-        
-        #normal_3d = np.array(self.center) - np.array(self.parent_center)
-
-        # Нормализуем нормаль
-        self.normal = normal_3d / np.linalg.norm(normal_3d)
-        #return normal_3d
+        # который ортогонален пространству столбцов A.
+        normal_candidate = U[:, -1] # Используем более нейтральное имя
+		
+		# Нормализация
+        norm_val = np.linalg.norm(normal_candidate)
+        if norm_val < 1e-9: # Защита от деления на ноль
+			# print(f"Warning: Degenerate normal calculated in Face2D for vertices {self.vertices}. Setting to zero vector.")
+            self.normal = np.zeros_like(normal_candidate)
+            self.bias = 0.0
+            return
+			
+        oriented_normal = normal_candidate / norm_val # Имя для нормализованной, но еще не ориентированной
+		
+		# Проверка и коррекция направления
+        vector_to_parent_center = np.array(self.parent_center) - np.array(self.center)
+        if np.dot(oriented_normal, vector_to_parent_center) > 0:
+			# Если скалярное произведение > 0, значит нормаль и вектор к центру родителя сонаправлены.
+			# Это означает, что нормаль указывает "внутрь" относительно parent_center.
+			# Меняем направление, чтобы она указывала "наружу".
+            final_normal = -oriented_normal
+        else:
+            final_normal = oriented_normal
+		
+		# Обновляем атрибуты экземпляра!
+        self.normal = final_normal
     
     # поиск ребер для 2х мерной грани (используется при создании класса)
     def find_edges(self):
@@ -162,7 +212,7 @@ class Face3D:
         self.faces = []
 
         for face_vertices in self.faces_list:
-            face = Face2D(face_vertices, self.center, self.vor4)
+            face = Face2D(face_vertices, self.center, self.vor4, self.normal)
             self.faces.append(face)
             
         #for index in range(len(self.faces_list)):
@@ -216,7 +266,7 @@ class VoronoiPolyhedra(Voronoi):
 			if length < sum_dist_min:
 				sum_dist_min = length
 				v_min = region
-				print(sum_dist_min, v_min)
+				#print(sum_dist_min, v_min)
 
 		# ищу индекс минимального региона
 		v_min = next((i for i, arr in enumerate(self.regions) if np.array_equal(arr, v_min)), None)
@@ -281,7 +331,6 @@ class VoronoiPolyhedra(Voronoi):
 			if len(common_coords) > 2:
 				self.faces_2d[comb[0]].append(common_coords)
 				self.faces_2d[comb[1]].append(common_coords)
-				#print(common_coords, y[comb[0]], y[comb[1]])
 				
 		
 
@@ -309,8 +358,10 @@ class VoronoiPolyhedra(Voronoi):
 		# составляем список центров многогранников, граничащих с центральным
 		# индексы координат в coords4
 
-		self.list_neigh_points = [] # список центров многогранников, граничащих с центральным
-		self.list_neigh_points_ind = [] # индексы из coords4
+		self.list_neigh_points = [[] for _ in range(len(self.faces_3d))] # список центров многогранников, граничащих с центральным
+		self.list_neigh_points_ind = [[] for _ in range(len(self.faces_3d))] # индексы из coords4
+
+
 
 		for pair in self.ridge_points:
 
@@ -318,16 +369,30 @@ class VoronoiPolyhedra(Voronoi):
 
 			if pair[0] == self.central_point_index:
 				
+				region = self.regions[self.point_region[pair[1]]]
+
 				# если в списке 4 многогранника есть вершины хоть одой 3 грани центрального многогранника
 				# то этот многогранник соседний с центральным
-				if any(all(item in self.regions[self.point_region[pair[1]]] for item in small) for small in self.faces_3d):
-					self.list_neigh_points.append(self.coords4[pair[1]])
-					self.list_neigh_points_ind.append(pair[1])
+				for i in range(len(self.faces_3d)):
+					if all(item in region for item in self.faces_3d[i]):
+						self.list_neigh_points_ind[i] = pair[1]
+						self.list_neigh_points[i] = self.coords4[pair[1]]
+
+
+				#if any(all(item in self.regions[self.point_region[pair[1]]] for item in small) for small in self.faces_3d):
+				#	self.list_neigh_points.append(self.coords4[pair[1]])
+				#	self.list_neigh_points_ind.append(pair[1])
 				
 			else:
-				if any(all(item in self.regions[self.point_region[pair[0]]] for item in small) for small in self.faces_3d):
-					self.list_neigh_points.append(self.coords4[pair[0]])
-					self.list_neigh_points_ind.append(pair[0])
+				region = self.regions[self.point_region[pair[0]]]
+				for i in range(len(self.faces_3d)):
+					if all(item in region for item in self.faces_3d[i]):
+						self.list_neigh_points_ind[i] = pair[0]
+						self.list_neigh_points[i] = self.coords4[pair[0]]
+
+				#if any(all(item in self.regions[self.point_region[pair[0]]] for item in small) for small in self.faces_3d):
+				#	self.list_neigh_points.append(self.coords4[pair[0]])
+				#	self.list_neigh_points_ind.append(pair[0])
 
 		# ищем для каждого центра ближайшую трехмерную грань
 		# берем каждую точку из списка соседних центральных точек и ищем расстояние от нее до каждой 3х мерной грани
@@ -335,40 +400,44 @@ class VoronoiPolyhedra(Voronoi):
 		# точкой из списка
 		# и вектор, соединяющий центры будет вектором нормали к данной 3х мерной грани
 
-		self.list_ridge_edge = [] # список граней, в том же порядке, что и соседние точки (list_neigh_points)
+		#self.list_ridge_edge = [] # список граней, в том же порядке, что и соседние точки (list_neigh_points)
 
 
 		# перебираем все соседние центры
-		for point in self.list_neigh_points:
+		#for point in self.list_neigh_points:
 			
-			min_dist_point_edge = 1000
+		#	min_dist_point_edge = 1000
 
 			# для каждой 3х мерной грани   
-			for edge in self.edge_central_coords:
+		#	for edge in self.edge_central_coords:
 				
-				dist_point_edge = 0
+		#		dist_point_edge = 0
 				
 				# для каждой вершины их 3х мерной грани считаем растояние до соседнего центра и суммируем
-				for coord in edge:
+		#		for coord in edge:
 					
-					dist_point_edge += distance.euclidean(coord, point)
+		#			dist_point_edge += distance.euclidean(coord, point)
 					
 				# если суммарное растояние меньше минимального, записываем новое суммарное растояние и индекс грани    
-				if min_dist_point_edge > dist_point_edge:
-					min_dist_point_edge = dist_point_edge
+		#		if min_dist_point_edge > dist_point_edge:
+		#			min_dist_point_edge = dist_point_edge
 
-			self.list_ridge_edge.append(edge)
+		#	self.list_ridge_edge.append(edge)
 
-
-	# строим список 2d граней 3d граней
+    # строим список 2d граней 3d граней
 	def find_2d_subfaces(self):
-		self.list_faces = []
+		self.list_faces = [] # список 2d граней 3d граней в координатах
+
+		# перебираем все 3х мерные грани 
+		# self.faces_2d - это список списков 2х мерных граней, которые принадлежат данной 3х мерной грани в индексах
 		for face3d in self.faces_2d:
       
-			list_vert_3d = []
+			list_vert_3d = [] # список 2d граней в координатах
+			# перебираем все 2х мерные грани, которые принадлежат данной 3х мерной грани
 			for face2d in face3d:
        
-				list_verts = []
+				list_verts = [] # список вершин 2х мерной грани в координатах
+				# перебираем все вершины 2х мерной грани и записываем их координаты
 				for vert in face2d:
 					list_verts.append(self.vertices[vert])
 
@@ -382,11 +451,11 @@ class VoronoiPolyhedra(Voronoi):
 	# ищем точки, принадлежащие граням и находящиеся на векторах нормали
 	def count_v_norm(self):
 		self.v_norm = [] # здесь будем хранить нормированные вектора нормали
-		self.point_face_norm = [] #точки, принадлежащие граням и находящиеся на векторах нормали
+		#self.point_face_norm = [] #точки, принадлежащие граням и находящиеся на векторах нормали
 
 		for vec in self.list_neigh_points:
 			self.v_norm.append(np.array(vec / np.linalg.norm(vec)))
-			self.point_face_norm = np.array(vec) / 2
+			#self.point_face_norm = np.array(vec) / 2
 
 	def get_vertex_faces_3d(self):
 		self.vertex_to_faces = [] # собой список списков 3D-граней для каждой вершины 
@@ -395,14 +464,21 @@ class VoronoiPolyhedra(Voronoi):
 		берем каждую верщину из central и перебираем все 3х мерные грани - смотрим есть ли данная вершина в этой 
 		3х мерной грани если да, то тдобавляем ее в список
 		'''
-		for vertex in self.central:
+		#for vertex in self.central:
+		for vertex in self.central_region_index:
 			
-			tamp_list = [] # список граней для текущей вершины
-			for face in range(len(self.edge_central_coords)):
-				if np.any(np.all(self.edge_central_coords[face] == vertex, axis=1)):
-					tamp_list.append(face)
-					
-			self.vertex_to_faces.append(tamp_list)
+			temp_list = [] # список граней для текущей вершины
+			
+			#for face in range(len(self.edge_central_coords)):
+			for face in range(len(self.faces_3d)):
+				
+				# если вершина входит в грань, то добавляем ее в список
+				#if np.any(np.all(np.isclose(self.edge_central_coords[face], vertex, atol=1e-8), axis=1)):
+				if vertex in self.faces_3d[face]:
+					temp_list.append(face)
+
+			# добавляем список граней для текущей вершины в общий список	
+			self.vertex_to_faces.append(temp_list)
 
 	def createPolyhedrons(self):
 		# расчитываем все грани центрального многогранника
@@ -443,8 +519,9 @@ class VoronoiPolyhedra(Voronoi):
 		print('Выпуклость триангуляции сохранена:', is_convex_hull_correct)
 
 	def build(self):
-		self.findCentral()
 		self.fillData()
+		self.findCentral()
+		#self.fillData()
 		self.findFaces3d()
 		self.findFaces2d()
 		self.findEdges()
