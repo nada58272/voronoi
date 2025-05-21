@@ -1,5 +1,6 @@
 import numpy as np
 from itertools import product
+import datetime
 #from fpylll import IntegerMatrix, LLL
 
 from Distances import *
@@ -19,6 +20,7 @@ def write_result_to_file(grid, det, mat, center, distance):
     :param distance: расстояние до многогранника
     """
     with open(output_file, 'a') as f:  # 'a' - append mode
+        f.write(f"Date: {datetime.datetime.now()}\n")
         f.write(f"Grid: {grid.tolist()}\n")
         f.write(f"Determinant: {det}\n")
         f.write(f"Matrix:\n{mat.tolist()}\n")
@@ -128,7 +130,7 @@ def find_optimal(det_range, limits, grid, vor4, max_len):
             iter = 0
             
             print("\r                                                          ")
-            print("▶ diag factors:", diag_el[1], diag_el[2], diag_el[3], "   iters:", num_iterations)
+            print("▶ diag factors:", diag_el[0], diag_el[1], diag_el[2], diag_el[3], "   iters:", num_iterations)
 
             for indices in product(range(max_num_col3), range(max_num_col3), range(max_num_col2),
                                    range(max_num_col3), range(max_num_col2), range(max_num_col1)):
@@ -166,7 +168,7 @@ def find_optimal(det_range, limits, grid, vor4, max_len):
                         dist = centers_dist[center_key]
                     else:
                         s = 0.5 * center
-                        dist, coords, ind = dist_to_s(vor4.polyhedrons, s, vor4, max_len)
+                        dist = dist_to_s(vor4, s, max_len)
                         # добавляем новое значение в centers_dist
                         centers_dist[center_key] = dist
 
@@ -183,7 +185,7 @@ def find_optimal(det_range, limits, grid, vor4, max_len):
 
                 if min_dist_mat < 1: continue
                 
-                print("\r", min_dist_mat, min_center, min_mat)#, min_sub_grid_LLL, min_sub_grid)#, s, centers)
+                print("\r", min_mat, "                      \n", min_dist_mat, min_center)#, min_sub_grid_LLL, min_sub_grid)#, s, centers)
 
                 # сохраняем значения для mat
                 list_mats.append(mat)

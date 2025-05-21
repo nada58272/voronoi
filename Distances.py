@@ -2,26 +2,7 @@ from Polyhedra import *
 from Factorization import *
 import math
 
-#--------------------------------------------------------------------------------
-def update_min_distance(dist, coords, index,
-                        current_min_dist, current_coords, current_index):
-    """
-    Обновляет текущее минимальное расстояние и соответствующие координаты и индекс,
-    если новое расстояние меньше.
-
-    :param dist: float — новое расстояние
-    :param coords: np.array — координаты точки с этим расстоянием
-    :param index: int — индекс проекции (например, индекс многогранника)
-    :param current_min_dist: float — текущее минимальное расстояние
-    :param current_coords: np.array — текущие координаты проекции
-    :param current_index: int — текущий индекс
-
-    :return: (float, np.array, int) — обновлённые значения (min_dist, coords_proj, index_proj)
-    """
-    if dist < current_min_dist:
-        return dist, coords, index
-    else:
-        return current_min_dist, current_coords, current_index
+CHECK_DIST = False
 
 #--------------------------------------------------------------------------------
 
@@ -59,32 +40,34 @@ def find_faces_from_nearest_vertices(s, central, vertex_to_faces):
 
 #--------------------------------------------------------------------------------
 
-def dist_to_s(polyhedrons, s, vor4, max_len):
+def checkDist(dist1, dist2):
+    if not math.isclose(dist1, dist2, abs_tol=1e-9):
+        print('dist_test', math.isclose(dist1, dist2, abs_tol=1e-9), dist1 - dist2)
+        
+#--------------------------------------------------------------------------------
+    
+def dist_to_s(vor4, s, max_len):
+    polyhedrons = vor4.polyhedrons
     
     min_dist_to_pol = float('inf') #минимальное расстояние до центрального многогранника
     index_proj = -1
-    min_dist_vert_to_s = float('inf')
-    min_vert = -1
     coords_proj = np.array([1, 1, 1, 1])
 
-
-    # находим ближайшую вершину к точке s
-    '''
-    for index in range(len(vor4.central)):
-
-        dist_vert_to_s = distance.euclidean(s, vor4.central[index])
-
-        if dist_vert_to_s < min_dist_vert_to_s:
-            min_dist_vert_to_s = dist_vert_to_s
-            min_vert = index
-    ''' 
     # находим список ближайших вершин к точке s   
     nearest_faces = find_faces_from_nearest_vertices(s, vor4.central, vor4.vertex_to_faces)
+    
+    def update_min_distance():
+        nonlocal dist, coords_to_central, i
+        nonlocal min_dist_to_pol, coords_proj, index_proj
+        
+        if dist < min_dist_to_pol:
+            min_dist_to_pol = dist
+            coords_proj = coords_to_central
+            index_proj = i
 
     # находим расстояние и проекцию на центральный многогранник
     
-    for i in nearest_faces:#vor4.vertex_to_faces[min_vert]: # рассматриваем только грани,которым принадлежит ближайшая в точке s вершина
-        # coord0 = s - (d0 + polyhedrons[i].bias)* polyhedrons[i].normal
+    for i in nearest_faces: # рассматриваем только грани,которым принадлежит ближайшая в точке s вершина
         d0 = polyhedrons[i].normal @ (s - polyhedrons[i].center)
         coord0 = s - d0 * polyhedrons[i].normal
         simplex = vor4.delaunay.find_simplex(coord0)
@@ -94,120 +77,79 @@ def dist_to_s(polyhedrons, s, vor4, max_len):
         if simplex != -1: # если проекция принадлежит центральному многораннику
             dist = abs(d0)
             coords_to_central = coord0
+         
+            update_min_distance()
+            continue     
+
+        for face2d in polyhedrons[i].faces: #cycle
+
+            d1 = face2d.normal @ (coord0 - face2d.center)
+            # coord1 = coord0 - (d1 + face2d.bias)* polyhedrons[i].normal
+            coord1 = coord0 - d1 * face2d.normal
+            simplex = vor4.delaunay.find_simplex(coord1)
+
+            d1_squared = d1 * d1 # храним хквадрат расстояния до 2х мерной грани
             
-            min_dist_to_pol, coords_proj, index_proj = update_min_distance(dist, 
-                                                                            coords_to_central, 
-                                                                            i,
-                                                                            min_dist_to_pol,
-                                                                            coords_proj,
-                                                                            index_proj
-                                                                            )
+            if simplex != -1: # если проекция принадлежит центральному многораннику
+                dist = distance.euclidean(s, coord1)#, dtype = 'float')
+                coords_to_central = coord1
+
+                # проверяем, что посчитанное расстояние совпадает с расстоянием по теореме Пифагора
+                dist_test = dist * dist - d1_squared - d0_squared
+                if not math.isclose(dist_test, 0., abs_tol=1e-9):
+                    print('dist_test, d1', math.isclose(dist_test, 0., abs_tol=1e-9), dist_test)
+                
+                update_min_distance()
+                continue
 
 
-            #coords_to_central = s - (d0 + polyhedrons[i].bias) * polyhedrons[i].normal
-        
+            for edge in face2d.edges:
+                d2 = edge.normal @ (coord1 - edge.center)
+                #coord2 = coord1 - (d2 + edge.bias) * edge.normal
+                coord2 = coord1 - d2 * edge.normal
+                simplex = vor4.delaunay.find_simplex(coord2)
 
-        else:
-            for face2d in polyhedrons[i].faces: #cycle
-
-                d1 = face2d.normal @ (coord0 - face2d.center)
-                # coord1 = coord0 - (d1 + face2d.bias)* polyhedrons[i].normal
-                coord1 = coord0 - d1 * face2d.normal
-                simplex = vor4.delaunay.find_simplex(coord1)
-
-                d1_squared = d1 * d1 # храним хквадрат расстояния до 2х мерной грани
+                d2_squared = d2 * d2 # храним квадрат расстояния до ребра
                 
                 if simplex != -1: # если проекция принадлежит центральному многораннику
-                    dist = distance.euclidean(s, coord1)#, dtype = 'float')
-                    coords_to_central = coord1
+                    dist = distance.euclidean(s, coord2)#, dtype = 'float')
+                    coords_to_central = coord2
 
                     # проверяем, что посчитанное расстояние совпадает с расстоянием по теореме Пифагора
-                    dist_test = dist * dist - d1_squared - d0_squared
+                    dist_test = dist * dist - d1_squared - d0_squared - d2_squared
                     if not math.isclose(dist_test, 0., abs_tol=1e-9):
-                        print('dist_test, d1', math.isclose(dist_test, 0., abs_tol=1e-9), dist_test)
-                    
-                    min_dist_to_pol, coords_proj, index_proj = update_min_distance(dist, 
-                                                                           coords_to_central, 
-                                                                           i,
-                                                                           min_dist_to_pol,
-                                                                           coords_proj,
-                                                                           index_proj
-                                                                          )
-                    
-                    
+                        print('dist_test, d2', math.isclose(dist_test, 0., abs_tol=1e-9), dist_test)
+
+                    update_min_distance()
+
                 else:
+                    d3 = distance.euclidean(coord2, edge.vertex1)                    
+                    d4 = distance.euclidean(coord2, edge.vertex2)
 
-                    for edge in face2d.edges:
-                        d2 = edge.normal @ (coord1 - edge.center)
-                        #coord2 = coord1 - (d2 + edge.bias) * edge.normal
-                        coord2 = coord1 - d2 * edge.normal
-                        simplex = vor4.delaunay.find_simplex(coord2)
+                    if d3 < d4:
+                        dist = distance.euclidean(s, edge.vertex1)
+                        coords_to_central = edge.vertex1
+                        d34_squared = d3 * d3 # храним квадрат расстояния до вершины 1
+                    else:
+                        dist = distance.euclidean(s, edge.vertex2)
+                        coords_to_central = edge.vertex2
+                        d34_squared = d4 * d4 # храним квадрат расстояния до вершины 1
 
-                        d2_squared = d2 * d2 # храним квадрат расстояния до ребра
-                        
-                        if simplex != -1: # если проекция принадлежит центральному многораннику
-                            dist = distance.euclidean(s, coord2)#, dtype = 'float')
-                            coords_to_central = coord2
+                    # проверяем, что посчитанное расстояние совпадает с расстоянием по теореме Пифагора
+                    if CHECK_DIST:
+                        checkDist(dist * dist, d0_squared + d1_squared + d2_squared + d34_squared)
 
-
-                            # проверяем, что посчитанное расстояние совпадает с расстоянием по теореме Пифагора
-                            dist_test = dist * dist - d1_squared - d0_squared - d2_squared
-                            if not math.isclose(dist_test, 0., abs_tol=1e-9):
-                                print('dist_test, d2', math.isclose(dist_test, 0., abs_tol=1e-9), dist_test)
-
-                            min_dist_to_pol, coords_proj, index_proj = update_min_distance(dist, 
-                                                                           coords_to_central, 
-                                                                           i,
-                                                                           min_dist_to_pol,
-                                                                           coords_proj,
-                                                                           index_proj
-                                                                          )
-
-                        else:
-                            #d3 = distance.euclidean(s, edge.vertex1)
-                            d3 = distance.euclidean(coord2, edge.vertex1)
-                            
-                            d3_squared = d3 * d3 # храним квадрат расстояния до вершины 1
-                            
-                            #d4 = distance.euclidean(s, edge.vertex2)
-                            d4 = distance.euclidean(coord2, edge.vertex2)
-                            d4_squared = d4 * d4 # храним хквадрат расстояния до вершины 2
-
-                            if d3 < d4:
-                                dist = distance.euclidean(s, edge.vertex1)
-                                coords_to_central = edge.vertex1
-
-                                # проверяем, что посчитанное расстояние совпадает с расстоянием по теореме Пифагора
-                                dist_test = dist * dist - d1_squared - d0_squared - d2_squared - d3_squared
-                                if not math.isclose(dist_test, 0., abs_tol=1e-9):
-                                    print('dist_test, d3', math.isclose(dist_test, 0., abs_tol=1e-9), dist_test)
-                            else:
-                                dist = distance.euclidean(s, edge.vertex2)
-                                coords_to_central = edge.vertex2
-
-                                # проверяем, что посчитанное расстояние совпадает с расстоянием по теореме Пифагора
-                                dist_test = dist * dist - d1_squared - d0_squared - d2_squared - d4_squared
-                                if not math.isclose(dist_test, 0., abs_tol=1e-9):
-                                    print('dist_test, d4', math.isclose(dist_test, 0., abs_tol=1e-9), dist_test)
-
-                            min_dist_to_pol, coords_proj, index_proj = update_min_distance(
-                                                                        dist, 
-                                                                        coords_to_central, 
-                                                                        i,
-                                                                        min_dist_to_pol,
-                                                                        coords_proj,
-                                                                        index_proj
-                                                                        )
-     
+                    update_min_distance()
+    
                             
         # если расстояние до какой-либо грани < 1, то дальше не считаем
     
         min_dist_to_pol = min_dist_to_pol * 2 / max_len
         
         if  min_dist_to_pol < 1:
-            return min_dist_to_pol, coords_proj, index_proj
+            return min_dist_to_pol
 
-    return min_dist_to_pol, coords_proj, index_proj
+    return min_dist_to_pol
 
 #--------------------------------------------------------------------------------
 # Достаточный набор комбинаций
