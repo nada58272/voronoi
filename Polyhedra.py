@@ -19,35 +19,6 @@ class Edge2D:
         self.normal_2d = normal_2d # Нормаль к 2D-грани
         self.normal_3d = normal_3d # Нормаль к 3D-гиперграни
 
-        def find_edge_normal(vertex1, vertex2, n_2d, n_3d):
-            # Вектор ребра
-            edge = vertex2 - vertex1
-            # Проверка, не вырождено ли само ребро
-            if np.linalg.norm(edge) < 1e-9:
-                # print(f"Warning: Degenerate edge in Edge2D ({v1}, {v2}). Returning zero normal.")
-                return np.zeros_like(vertex1) # Возвращаем нулевой вектор той же размерности
-            
-			# Матрица условий ортогональности
-            #A = np.vstack([edge, n_2d, n_3d]).T
-            A = np.column_stack((edge, n_2d, n_3d))
-
-            # SVD разложение
-
-            try:
-                U, S, Vt = np.linalg.svd(A)
-
-				# Нормаль к ребру - последний столбец U
-                n_edge_candidate = U[:, -1]
-
-            except np.linalg.LinAlgError:
-                # print(f"Warning: SVD failed in Edge2D for edge ({v1}, {v2}). Returning zero normal.")
-                return np.zeros_like(vertex1)
-			
-            # Нормировка
-            #n_edge = n_edge / np.linalg.norm(n_edge)
-
-            return n_edge_candidate
-
         # Вычисляем середину ребра
         self.center = (self.vertex1 + self.vertex2) / 2
 
@@ -55,10 +26,11 @@ class Edge2D:
         #edge_vector = self.vertex2 - self.vertex1
         #self.normal = self.center - self.face_center  # Перпендикулярный вектор
         #self.normal = self.normal / np.linalg.norm(self.normal)  # Нормализация
-        normal_candidate = find_edge_normal(self.vertex1, self.vertex2, self.normal_2d, self.normal_3d)
+        normal_candidate = self._find_edge_normal(self.vertex1, self.vertex2, self.normal_2d, self.normal_3d)
         
         # Проверка на вырожденность и нормализация
         norm_val = np.linalg.norm(normal_candidate)
+
         if norm_val < 1e-9:
             # print(f"Warning: Degenerate normal calculated for Edge2D ({self.vertex1}, {self.vertex2}). Setting to zero vector.")
             self.normal = np.zeros_like(normal_candidate)
@@ -69,7 +41,7 @@ class Edge2D:
 
             # Проверяем и корректируем направление нормали (она должна быть направлена "наружу" от центра 2D-грани)
             vector_to_face_center = self.face_center - self.center
-            if np.dot(oriented_normal, vector_to_face_center) > 0:
+            if np.dot(oriented_normal, vector_to_face_center) > 1e-7: # Допуск для численной стабильности
                 self.normal = -oriented_normal
             else:
                 self.normal = oriented_normal
@@ -82,10 +54,45 @@ class Edge2D:
         #vector_to_center = self.face_center - self.center
         #if np.dot(self.normal, vector_to_center) > 0:
          #   self.normal = -self.normal  # Меняем направление нормали
+    
+    def _find_edge_normal(self, vertex1, vertex2, n_2d, n_3d):
+            # Вектор ребра
+            edge = vertex2 - vertex1
+            
+            # Проверка, не вырождено ли само ребро
+            if np.linalg.norm(edge) < 1e-9:
+                # print(f"Warning: Degenerate edge in Edge2D ({v1}, {v2}). Returning zero normal.")
+                return np.zeros_like(vertex1) # Возвращаем нулевой вектор той же размерности
+            
+            edge = edge / np.linalg.norm(edge)
+   # Матрица условий ортогональности
+            #A = np.vstack([edge, n_2d, n_3d]).T
+            A = np.column_stack((edge, n_2d, n_3d))
+
+            # SVD разложение
+
+            try:
+                U, S, Vt = np.linalg.svd(A)
+                
+                if S[-1] < 1e-7: # Порог для определения вырожденности/линейной зависимости
+                  return np.zeros_like(vertex1) # 
+    
+    # Нормаль к ребру - последний столбец U
+                n_edge_candidate = U[:, -1]
+
+            except np.linalg.LinAlgError:
+                # print(f"Warning: SVD failed in Edge2D for edge ({v1}, {v2}). Returning zero normal.")
+                return np.zeros_like(vertex1)
+   
+            # Нормировка
+            #n_edge = n_edge / np.linalg.norm(n_edge)
+
+            return n_edge_candidate
 
     def __repr__(self):
         return f"Edge2D(vertex1={self.vertex1}, vertex2={self.vertex2}, normal={self.normal}, \
                 midpoint={self.center})"
+
 
 #--------------------------------------------------------------------------------
 
@@ -166,8 +173,11 @@ class Face2D:
         found_edges = self.find_edges()        
         
         for vertex1, vertex2 in found_edges:
-            self.edges.append(Edge2D(vertex1, vertex2, self.center, self.normal, self.parent_center))
+			# поменяла 12.09.25 self.parent_center на self.parent_normal
+			
+            self.edges.append(Edge2D(vertex1, vertex2, self.center, self.normal, self.parent_normal))
             #self.edges.append(Edge2D(vertex1, vertex2, self.center))
+		
     
     def __repr__(self):
         '''
