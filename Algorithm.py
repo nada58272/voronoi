@@ -101,6 +101,7 @@ def find_optimal(det_range, limits, grid, vor4, max_len, precision, threshold):
     :return: словари det_dist, det_center, det_mat с результатами.
     """
     
+    
     # Инициализация словарей для хранения результатов
     centers_dist = dict() 
 
