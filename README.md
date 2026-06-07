@@ -54,7 +54,7 @@ voronoi/
 ├── pyproject.toml
 ├── src/voronoi4d/
 │   ├── polyhedra.py      # Edge2D, Face2D, Face3D, VoronoiPolyhedra
-│   ├── distances.py      # dist_to_s, s_point, center_points
+│   ├── distances.py      # dist_to_s — расстояние от точки до центрального многогранника
 │   ├── search.py         # find_optimal — основной перебор
 │   ├── factorization.py  # разложение определителя на множители
 │   ├── lll.py            # LLL-приведение (fpylll или чистый python)

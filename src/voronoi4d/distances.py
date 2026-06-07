@@ -5,12 +5,12 @@
 """
 
 import math
+import warnings
 
 import numpy as np
-from itertools import product
 from scipy.spatial import distance
 
-CHECK_DIST = True  # проверка расстояний по теореме Пифагора
+CHECK_DIST = True  # проверка расстояний по теореме Пифагора (можно отключить: установить False)
 TOL_SIMPLEX = 1e-9  # допуск поиска симплекса в триангуляции
 TOL_NEAREST = 1e-7  # допуск сравнения расстояний до ближайших вершин
 
@@ -18,9 +18,15 @@ TOL_NEAREST = 1e-7  # допуск сравнения расстояний до 
 
 
 def check_dist(dist1, dist2):
-    """Сверяет два квадрата расстояний (контроль по теореме Пифагора)."""
+    """Сверяет два квадрата расстояний (контроль по теореме Пифагора).
+
+    При расхождении выдаёт предупреждение через модуль warnings (не прерывает счёт).
+    """
     if not math.isclose(dist1, dist2, abs_tol=1e-9):
-        print("dist_test", math.isclose(dist1, dist2, abs_tol=1e-9), dist1 - dist2)
+        warnings.warn(
+            f"расхождение квадратов расстояний (теорема Пифагора): {dist1 - dist2}",
+            stacklevel=2,
+        )
 
 
 # --------------------------------------------------------------------------------
@@ -34,19 +40,17 @@ def find_faces_from_nearest_vertices(s, central, vertex_to_faces):
     :param vertex_to_faces: для каждой вершины — список индексов содержащих её граней.
     :return: множество индексов граней, общих для всех ближайших вершин.
     """
-    min_dist_vert_to_s = float("inf")  # минимальное расстояние до точки s
-    min_dist_to_s_list = []  # индексы ближайших вершин
+    # два прохода, чтобы не терять со-ближайшую вершину при численном равенстве:
+    # сначала находим минимальное расстояние, затем собираем все вершины в его пределах
+    dists = [distance.euclidean(s, central[index]) for index in range(len(central))]
+    min_dist_vert_to_s = min(dists)  # минимальное расстояние до точки s
 
-    for index in range(len(central)):
-        dist_vert_to_s = distance.euclidean(s, central[index])
-
-        # расстояние совпадает с минимальным — добавляем вершину в список
-        if np.allclose(dist_vert_to_s - min_dist_vert_to_s, 0, atol=TOL_NEAREST):
-            min_dist_to_s_list.append(index)
-        # расстояние строго меньше — обновляем минимум и начинаем список заново
-        elif dist_vert_to_s < min_dist_vert_to_s:
-            min_dist_vert_to_s = dist_vert_to_s
-            min_dist_to_s_list = [index]
+    # индексы вершин, со-ближайших к s в пределах допуска
+    min_dist_to_s_list = [
+        index
+        for index, dist_vert_to_s in enumerate(dists)
+        if np.allclose(dist_vert_to_s - min_dist_vert_to_s, 0, atol=TOL_NEAREST)
+    ]
 
     # пересечение множеств граней, связанных с ближайшими вершинами
     selected_lists = [set(vertex_to_faces[i]) for i in min_dist_to_s_list]
@@ -68,6 +72,11 @@ def dist_to_s(vor4, s, max_len):
     Проекция ищется каскадом: на 3-мерную грань, затем (если проекция вне
     многогранника) на её 2-мерные грани, затем на рёбра и вершины.
 
+    Ранний выход: как только нормированное расстояние очередной грани оказывается
+    меньше 1, функция сразу возвращает ТЕКУЩИЙ минимум (не обязательно глобальный
+    по всем граням). Для алгоритма раскраски этого достаточно — важен лишь факт
+    d < 1: раскраска с таким запрещённым расстоянием заведомо непригодна.
+
     :param vor4: объект VoronoiPolyhedra после build().
     :param s: координаты точки (np.array).
     :param max_len: диаметр центрального многогранника diam(V0).
@@ -76,19 +85,15 @@ def dist_to_s(vor4, s, max_len):
     polyhedrons = vor4.polyhedrons
 
     min_dist_to_pol = float("inf")  # минимальное расстояние до центрального многогранника
-    index_proj = -1
-    coords_proj = np.array([1, 1, 1, 1])
 
     # грани, которым принадлежит ближайшая к s вершина
     nearest_faces = find_faces_from_nearest_vertices(s, vor4.central, vor4.vertex_to_faces)
 
     def update_min_distance():
-        nonlocal min_dist_to_pol, coords_proj, index_proj
+        nonlocal min_dist_to_pol
 
         if dist < min_dist_to_pol:
             min_dist_to_pol = dist
-            coords_proj = coords_to_central
-            index_proj = i
 
     # рассматриваем только грани, которым принадлежит ближайшая к s вершина
     for i in nearest_faces:
@@ -101,7 +106,6 @@ def dist_to_s(vor4, s, max_len):
 
         if simplex != -1:  # проекция принадлежит центральному многограннику
             dist = abs(d0)
-            coords_to_central = coord0
             update_min_distance()
             continue
 
@@ -115,7 +119,6 @@ def dist_to_s(vor4, s, max_len):
 
             if simplex != -1:  # проекция принадлежит центральному многограннику
                 dist = distance.euclidean(s, coord1)
-                coords_to_central = coord1
 
                 if CHECK_DIST:
                     check_dist(dist * dist, d0_squared + d1_squared)
@@ -133,7 +136,6 @@ def dist_to_s(vor4, s, max_len):
 
                 if simplex != -1:  # проекция принадлежит центральному многограннику
                     dist = distance.euclidean(s, coord2)
-                    coords_to_central = coord2
 
                     if CHECK_DIST:
                         check_dist(dist * dist, d0_squared + d1_squared + d2_squared)
@@ -146,11 +148,9 @@ def dist_to_s(vor4, s, max_len):
 
                     if d3 < d4:
                         dist = distance.euclidean(s, edge.vertex1)
-                        coords_to_central = edge.vertex1
                         d34_squared = d3 * d3
                     else:
                         dist = distance.euclidean(s, edge.vertex2)
-                        coords_to_central = edge.vertex2
                         d34_squared = d4 * d4
 
                     if CHECK_DIST:
@@ -163,64 +163,3 @@ def dist_to_s(vor4, s, max_len):
             return min_dist_to_pol * 2 / max_len
 
     return min_dist_to_pol * 2 / max_len
-
-
-# --------------------------------------------------------------------------------
-# Достаточный набор комбинаций коэффициентов подрешётки
-#! можно оптимизировать ещё на этом этапе: не включать элементы вида
-#  [0, negative, ...], [0, 0, negative, ...], [0, 0, 0, negative]
-
-DIGITS = np.array(list(product(
-    [0, 1, 2],
-    [0, 1, -1, 2, -2],
-    [0, 1, -1, 2, -2],
-    [0, 1, -1, 2, -2],
-)))
-
-# удаляем нулевую точку
-DIGITS = DIGITS[~np.all(DIGITS == 0, axis=1)]
-
-# --------------------------------------------------------------------------------
-
-
-def s_point(sub_grid, vor4):
-    """Ищет точку s для подрешётки.
-
-    s — середина отрезка между началом координат и ближайшим к нему центром
-    многогранника подрешётки, совпадающим с одним из центров исходной решётки.
-
-    :param sub_grid: базис подрешётки (numpy.ndarray).
-    :param vor4: объект VoronoiPolyhedra.
-    :return: координаты точки s (или нулевая точка, если общих центров нет).
-    """
-    sub_points = np.dot(DIGITS, sub_grid)  # все точки подрешётки
-
-    # точки подрешётки, совпадающие с центрами исходной решётки
-    common_coord = np.array([x for x in sub_points if x.tolist() in vor4.coords4])
-    if len(common_coord) == 0:
-        return np.array([0, 0, 0, 0])
-
-    # ближайшая к центру точка
-    dist_to_center = np.linalg.norm(common_coord, axis=1)
-    closest_idx = np.argmin(dist_to_center)
-    return common_coord[closest_idx] * 0.5
-
-
-def center_points(sub_grid, diameter=2):
-    """Отбирает центры многогранников подрешётки, ближайшие к началу координат.
-
-    :param sub_grid: базис подрешётки (numpy.ndarray).
-    :param diameter: диаметр многогранника (запас отбора).
-    :return: список точек, расстояние до которых не превышает минимум + diameter.
-    """
-    grid_points = np.dot(DIGITS, sub_grid)  # все точки подрешётки
-
-    # минимальное расстояние от начала координат до центра многогранника
-    central_dist_min = min(np.linalg.norm(point) for point in grid_points)
-
-    # отбираем центры не дальше, чем минимум + диаметр
-    return [
-        np.array(point)
-        for point in grid_points
-        if np.linalg.norm(point) < central_dist_min + diameter
-    ]

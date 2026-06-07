@@ -21,7 +21,10 @@ def gram_schmidt(basis):
     """Ортогонализация Грама-Шмидта.
 
     :param basis: список векторов базиса.
-    :return: кортеж (b_star, mu): ортогонализованные векторы и матрица коэффициентов.
+    :return: кортеж (b_star, mu), где b_star — ортогонализованные векторы,
+             mu — строго нижнетреугольная матрица коэффициентов (диагональ
+             нулевая и не используется; квадраты норм |b*_i|^2 lll_reduce_python
+             считает отдельно в beta).
     """
     n = len(basis)
     b_star = [np.array(basis[i], dtype=float) for i in range(n)]
@@ -31,7 +34,6 @@ def gram_schmidt(basis):
         for j in range(i):
             mu[i, j] = np.dot(basis[i], b_star[j]) / np.dot(b_star[j], b_star[j])
             b_star[i] -= mu[i, j] * b_star[j]
-        mu[i, i] = np.dot(b_star[i], b_star[i])  # beta_i = |b*_i|^2
 
     return b_star, mu
 

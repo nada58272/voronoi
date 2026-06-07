@@ -3,7 +3,6 @@
 import numpy as np
 
 from voronoi4d import (
-    center_points,
     check_dist,
     dist_to_s,
     lattice_points_no_central_symmetry,
@@ -64,19 +63,3 @@ def test_point_slightly_offset(vor):
     """
     s = np.array([1.7, 0.1, 0.1, 0.1])
     assert np.isclose(dist_to_s(vor, s, vor.max_len), 1.2, atol=1e-5)
-
-
-def test_center_points_selects_nearest():
-    """Регрессия: минимальное расстояние должно реально обновляться.
-
-    Для единичной решётки ближайшие центры на расстоянии 1,
-    отбираются точки с расстоянием < 1 + diameter = 3.
-    """
-    points = center_points(np.eye(4), diameter=2)
-
-    assert len(points) > 0
-    dists = [np.linalg.norm(p) for p in points]
-    # минимум по всем точкам решётки равен 1 — он должен попасть в выборку
-    assert np.isclose(min(dists), 1.0)
-    # и ничего дальше минимума + диаметра попасть не должно
-    assert max(dists) < 1.0 + 2

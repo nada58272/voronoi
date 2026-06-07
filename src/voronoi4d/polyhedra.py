@@ -212,6 +212,12 @@ class VoronoiPolyhedra(Voronoi):
     COEFF_RANGE = range(-3, 3)
 
     def __init__(self, grid):
+        """
+        :param grid: базис 4-мерной решётки — матрица 4x4 (numpy.ndarray),
+                     строки которой задают векторы базиса. Центры многогранников
+                     генерируются как целочисленные комбинации строк базиса
+                     с коэффициентами из COEFF_RANGE.
+        """
         self.grid = grid
 
         # координаты центров многогранников
@@ -241,6 +247,11 @@ class VoronoiPolyhedra(Voronoi):
             if length < sum_dist_min:
                 sum_dist_min = length
                 central_index = index
+
+        if central_index is None:
+            raise ValueError(
+                "центральный ограниченный регион не найден — расширьте COEFF_RANGE"
+            )
 
         if verbose:
             print("суммарное расстояние =", sum_dist_min, "индекс центрального региона =", central_index)
@@ -341,6 +352,15 @@ class VoronoiPolyhedra(Voronoi):
 
     def normalize_normals(self):
         """Нормирует векторы нормалей (направления к соседним центрам)."""
+        # каждой 3-мерной грани должен соответствовать соседний центр;
+        # пустой элемент означает, что сосед по грани не найден (find_neighbors)
+        for i, vec in enumerate(self.list_neigh_points):
+            if len(vec) == 0:
+                raise ValueError(
+                    f"для 3-мерной грани {i} не найден соседний центр — "
+                    "построение нормали невозможно (проверьте COEFF_RANGE и разбиение)"
+                )
+
         self.v_norm = [np.array(vec / np.linalg.norm(vec)) for vec in self.list_neigh_points]
 
     def map_vertices_to_faces(self):
@@ -398,7 +418,6 @@ class VoronoiPolyhedra(Voronoi):
         self.find_neighbors()
 
         self.max_len = self._find_max_len()  # диаметр центрального многогранника
-        self.min_d = 1
 
         self.find_2d_subfaces()
         self.normalize_normals()

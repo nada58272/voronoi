@@ -8,13 +8,12 @@
 - generate_grids / generate_integer_grids — генерация базисов решёток.
 """
 
+from importlib.metadata import PackageNotFoundError, version
+
 from .distances import (
-    DIGITS,
-    center_points,
     check_dist,
     dist_to_s,
     find_faces_from_nearest_vertices,
-    s_point,
 )
 from .factorization import (
     compute_factorizations,
@@ -35,17 +34,20 @@ from .lll import HAS_FPYLLL, gram_schmidt, lll_reduce, lll_reduce_python
 from .polyhedra import Edge2D, Face2D, Face3D, VoronoiPolyhedra
 from .search import find_optimal, lattice_points_no_central_symmetry
 
-__version__ = "1.0.0"
+# единый источник версии — поле version в pyproject.toml (читаем из метаданных)
+try:
+    __version__ = version("voronoi4d")
+except PackageNotFoundError:
+    # пакет не установлен (запуск из исходников без установки)
+    __version__ = "0.0.0+unknown"
 
 __all__ = [
-    "DIGITS",
     "Edge2D",
     "Face2D",
     "Face3D",
     "HAS_FPYLLL",
     "VoronoiPolyhedra",
     "canonical_form_by_rows",
-    "center_points",
     "check_dist",
     "check_grid",
     "compute_factorizations",
@@ -64,6 +66,5 @@ __all__ = [
     "normalize_rows",
     "pad_lists_with_ones",
     "plot_results",
-    "s_point",
     "save_result",
 ]
