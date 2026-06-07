@@ -1,6 +1,25 @@
-*__pycache__*
+# python
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+venv/
+.venv/
+
+# jupyter
+.ipynb_checkpoints/
+
+# pytest
+.pytest_cache/
+
+# локальные настройки
+.claude/
+
+# macOS
 .DS_Store
-/data
-*pyproject*
-**egg-info**
-*setup*
+
+# результаты экспериментов
+results.txt
+results/
+data/

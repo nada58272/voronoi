@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "voronoi4d"
+version = "1.0.0"
+description = "Поиск хроматического числа R^4 через разбиения Вороного 4-мерных решёток"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "sympy",
+]
+
+[project.optional-dependencies]
+fast = ["fpylll"]       # быстрая C-реализация LLL (иначе — чистый python)
+plot = ["matplotlib"]   # построение графиков результатов
+progress = ["tqdm"]     # прогресс-бар при переборе целочисленных решёток
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
