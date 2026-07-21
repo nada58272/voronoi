@@ -74,32 +74,50 @@ def lll_reduce_python(basis, delta=0.75):
     return np.array(basis)
 
 
-def lll_reduce_fpylll(basis, precision=3):
+def lll_reduce_fpylll(basis, delta=0.75, precision=12):
     """LLL-приведение через fpylll (работает с целыми числами).
 
     Матрица масштабируется до целых чисел с заданной точностью,
-    приводится и масштабируется обратно.
+    приводится и масштабируется обратно. Если базис непредставим в этой
+    точности (округление меняет решётку), возвращается None — вызывающая
+    сторона обязана перейти на python-реализацию.
 
     :param basis: матрица базиса (numpy.ndarray).
+    :param delta: параметр Ловаса (передаётся в fpylll).
     :param precision: количество десятичных знаков, сохраняемых при масштабировании.
-    :return: приведённый базис (numpy.ndarray, float).
+    :return: приведённый базис (numpy.ndarray, float) или None.
     """
+    arr = np.asarray(basis, dtype=float)
     scale = 10 ** precision
-    scaled = np.round(np.asarray(basis, dtype=float) * scale).astype(int)
+    scaled = np.round(arr * scale)
+    # представимость: округление не должно возмутить решётку
+    # (масштаб больших чисел тоже контролируем: целые части точны в double до 2^53)
+    tol = 1e-9 * max(1.0, float(np.abs(arr).max()))
+    if not np.allclose(scaled / scale, arr, rtol=0.0, atol=tol) or np.abs(scaled).max() > 2 ** 53:
+        return None
 
-    reduced = _FpylllLLL.reduction(IntegerMatrix.from_matrix(scaled.tolist()))
+    reduced = _FpylllLLL.reduction(
+        IntegerMatrix.from_matrix([[int(v) for v in row] for row in scaled.tolist()]),
+        delta=delta)
     rows, cols = reduced.nrows, reduced.ncols
-    return np.array([[reduced[i, j] for j in range(cols)] for i in range(rows)]) / scale
+    return np.array([[reduced[i, j] for j in range(cols)] for i in range(rows)],
+                    dtype=float) / scale
 
 
-def lll_reduce(basis, delta=0.75, precision=3):
-    """LLL-приведение базиса: fpylll, если доступна, иначе чистый python.
+def lll_reduce(basis, delta=0.75, precision=12):
+    """LLL-приведение базиса: fpylll, если доступна и базис представим,
+    иначе чистый python. delta действует в обоих путях.
+
+    (До версии 1.1.0 fpylll-путь молча округлял базис до 3 знаков и игнорировал
+    delta; см. AUDIT-2026-07-21.)
 
     :param basis: матрица базиса (numpy.ndarray).
-    :param delta: параметр Ловаса (используется только python-реализацией).
+    :param delta: параметр Ловаса (обычно 0.75).
     :param precision: точность целочисленного масштабирования (только для fpylll).
     :return: приведённый базис (numpy.ndarray, float).
     """
     if HAS_FPYLLL:
-        return lll_reduce_fpylll(basis, precision=precision)
+        reduced = lll_reduce_fpylll(basis, delta=delta, precision=precision)
+        if reduced is not None:
+            return reduced
     return lll_reduce_python(basis, delta=delta)

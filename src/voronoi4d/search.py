@@ -10,11 +10,14 @@
 с максимальным таким расстоянием. Раскраска пригодна при d >= threshold (= 1).
 """
 
+import math
+
 import numpy as np
 from itertools import product
 from scipy.spatial import distance
 
 from .distances import dist_to_s
+from .enumeration import lattice_points_within, shortest_vector
 from .factorization import compute_factorizations, pad_lists_with_ones
 from .io import save_result
 from .lll import lll_reduce
@@ -24,6 +27,10 @@ from .lll import lll_reduce
 
 def lattice_points_no_central_symmetry(basis, limits, max_len):
     """Генерирует точки решётки без центрально-симметричных дубликатов.
+
+    УСТАРЕЛА для поиска: find_optimal() с версии 1.1.0 использует точный
+    сферический перебор с границей достаточности |v| < D + diam
+    (enumeration.lattice_points_within). Оставлена в API для совместимости.
 
     Из каждой пары точек (p, -p) остаётся одна: первый ненулевой коэффициент
     должен быть положительным. Если минимальное расстояние между точками
@@ -61,27 +68,46 @@ def lattice_points_no_central_symmetry(basis, limits, max_len):
 # --------------------------------------------------------------------------------
 
 
-def find_optimal(det_range, limits, grid, vor4, max_len, precision=3, threshold=1.0,
+def find_optimal(det_range, limits, grid, vor4, max_len, precision=12, threshold=1.0,
                  output_file="results.txt", verbose=True):
     """Поиск матриц перехода и расстояний для диапазона определителей.
 
     :param det_range: range или список определителей (количеств цветов k) для обработки.
-    :param limits: границы генерации коэффициентов точек подрешётки.
-    :param grid: исходная решётка (numpy.ndarray).
+    :param limits: УСТАРЕЛ и игнорируется (сохранён для совместимости сигнатуры):
+                   кандидаты перечисляются точно в границе |v| < D_текущ + diam.
+    :param grid: исходная решётка (numpy.ndarray); должна совпадать с vor4.grid.
     :param vor4: объект VoronoiPolyhedra после build().
-    :param max_len: диаметр центрального многогранника diam(V0).
-    :param precision: точность целочисленного масштабирования для LLL.
+    :param max_len: диаметр центрального многогранника diam(V0) (= vor4.max_len).
+    :param precision: точность целочисленного масштабирования для LLL (fpylll).
     :param threshold: минимально допустимое нормированное расстояние d
                       (матрицы с меньшим пропускаются; d >= 1 — пригодная раскраска).
     :param output_file: файл для записи результатов.
     :param verbose: печатать прогресс.
     :return: словари det_dist, det_center, det_mat (ключ — определитель).
     """
+    del limits  # устарел: полнота обеспечивается границей достаточности
+
+    # согласованность аргументов (см. аудит, M5): расхождение grid/vor4/max_len
+    # раньше приводило к молча несогласованной фильтрации и нормировке
+    if not np.allclose(np.asarray(grid, dtype=float), np.asarray(vor4.grid, dtype=float)):
+        raise ValueError("find_optimal: grid не совпадает с vor4.grid")
+    if not math.isclose(max_len, vor4.max_len, rel_tol=1e-9):
+        raise ValueError("find_optimal: max_len не совпадает с vor4.max_len")
+
     centers_dist = {}  # кэш: ключ — координаты точки, значение — расстояние
 
     det_dist = {}  # ключ — определитель, значение — расстояние
     det_center = {}  # ключ — определитель, значение — координаты точки s
     det_mat = {}  # ключ — определитель, значение — матрица перехода
+
+    def eval_center(center):
+        """d(v) c кэшем; значения < threshold — верхние оценки (ранний выход)."""
+        center_key = tuple(np.round(center, 9))
+        if center_key in centers_dist:
+            return centers_dist[center_key]
+        d_val = dist_to_s(vor4, 0.5 * center, max_len, early_stop=threshold)
+        centers_dist[center_key] = d_val
+        return d_val
 
     for det in det_range:
         if verbose:
@@ -129,32 +155,32 @@ def find_optimal(det_range, limits, grid, vor4, max_len, precision=3, threshold=
                 sub_grid = np.dot(mat, grid)
                 sub_grid_lll = lll_reduce(sub_grid, precision=precision)
 
-                centers = lattice_points_no_central_symmetry(sub_grid_lll, limits, vor4.max_len)
-
-                # решётка отброшена (слишком близкие точки)
-                if len(centers) == 1 and np.array_equal(centers[0], np.array([0, 0, 0, 0])):
+                # точный кратчайший вектор подрешётки; D(v) <= |v|, поэтому
+                # |v_min| <= threshold*diam означает d < threshold — реджект
+                v_min = shortest_vector(sub_grid_lll)
+                v_min_norm = float(np.linalg.norm(v_min))
+                if v_min_norm <= threshold * max_len:
                     continue
 
-                # минимальное расстояние для данной матрицы mat
-                min_dist_mat = float("inf")
-                min_center = None
+                # стартовая оценка минимума — по кратчайшему вектору
+                min_dist_mat = eval_center(v_min)
+                min_center = v_min.copy()
 
-                for center in centers:
-                    center_key = tuple(center)
-
-                    if center_key in centers_dist:
-                        dist = centers_dist[center_key]
-                    else:
-                        s = 0.5 * center
-                        dist = dist_to_s(vor4, s, max_len)
-                        centers_dist[center_key] = dist
-
-                    if dist < min_dist_mat:
-                        min_dist_mat = dist
-                        min_center = center.copy()
-
-                    if min_dist_mat < threshold:
-                        break
+                if min_dist_mat >= threshold:
+                    # полный перебор кандидатов в границе достаточности
+                    # |v| < D_текущ + diam (D(v) >= |v| - diam)
+                    bound = (min_dist_mat + 1.0) * max_len
+                    candidates = sorted(lattice_points_within(sub_grid_lll, bound),
+                                        key=lambda v: float(v @ v))
+                    for center in candidates:
+                        if float(np.linalg.norm(center)) - max_len >= min_dist_mat * max_len:
+                            break  # дальше только длиннее — минимум не улучшат
+                        dist = eval_center(center)
+                        if dist < min_dist_mat:
+                            min_dist_mat = dist
+                            min_center = center.copy()
+                        if min_dist_mat < threshold:
+                            break
 
                 # расстояние меньше порога — матрица не подходит
                 if min_dist_mat < threshold:

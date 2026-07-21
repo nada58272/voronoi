@@ -15,9 +15,10 @@ from .distances import (
     dist_to_s,
     find_faces_from_nearest_vertices,
 )
+from .enumeration import lattice_points_within, shortest_vector
 from .factorization import (
     compute_factorizations,
-    generate_factor_combinations,
+    ordered_factorizations,
     pad_lists_with_ones,
 )
 from .grids import (
@@ -54,14 +55,16 @@ __all__ = [
     "dist_to_s",
     "find_faces_from_nearest_vertices",
     "find_optimal",
-    "generate_factor_combinations",
     "generate_grids",
     "generate_integer_grids",
     "generate_random_matrix",
     "gram_schmidt",
     "lattice_points_no_central_symmetry",
+    "lattice_points_within",
     "lll_reduce",
     "lll_reduce_python",
+    "ordered_factorizations",
+    "shortest_vector",
     "min_max_det",
     "normalize_rows",
     "pad_lists_with_ones",

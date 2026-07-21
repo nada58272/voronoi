@@ -1,57 +1,52 @@
 """Разложение определителя на множители.
 
-Для заданного определителя строятся все варианты разложения на ≤4 множителя —
-они становятся диагональными элементами матриц перехода к подрешёткам.
+Для заданного определителя строятся ВСЕ упорядоченные разложения на 4 множителя
+(включая перестановки и единицы) — они становятся диагоналями матриц перехода
+в эрмитовой нормальной форме. Полнота перебора диагоналей гарантирует, что
+каждая подрешётка данного индекса встречается ровно один раз; суммарное число
+матриц равно классическому Σ по диагоналям d2 * d3**2 * d4**3.
+
+(До версии 1.1.0 перечислялись только неубывающие диагонали — это покрывало
+лишь часть подрешёток; см. AUDIT-2026-07-21.)
 """
 
-from sympy import factorint
+from sympy import divisors
 
 # --------------------------------------------------------------------------------
 
 
-def generate_factor_combinations(factors):
-    """Генерирует все комбинации группировки списка простых множителей.
+def ordered_factorizations(n, length=4):
+    """Все упорядоченные разложения n на length множителей >= 1.
 
-    :param factors: список простых множителей (с повторениями).
-    :return: список комбинаций (каждая — список множителей).
+    Например, n=4, length=2 -> [[1, 4], [2, 2], [4, 1]].
+
+    :param n: целое число >= 1.
+    :param length: количество множителей.
+    :return: список разложений (каждое — список длины length).
     """
-    if not factors:
-        return [[]]
-
-    first, *rest = factors
-    rest_combinations = generate_factor_combinations(rest)
-
+    if length == 1:
+        return [[n]]
     result = []
-    for comb in rest_combinations:
-        result.append([first] + comb)
-        result.append([first * (comb[0] if comb else 1)] + (comb[1:] if len(comb) > 1 else []))
-
+    for d in divisors(n):
+        for rest in ordered_factorizations(n // d, length - 1):
+            result.append([d] + rest)
     return result
 
 
 def compute_factorizations(n):
-    """Находит все разложения числа n на множители длиной не более 4.
+    """Все упорядоченные разложения числа n на 4 множителя (диагонали HNF).
 
     :param n: целое число (определитель).
-    :return: отсортированный список уникальных разложений.
+    :return: отсортированный список разложений длины 4.
     """
-    # простые множители числа (с учётом кратности)
-    factors = []
-    for prime, exp in factorint(n).items():
-        factors.extend([prime] * exp)
-
-    combinations = generate_factor_combinations(factors)
-
-    # убираем дубликаты и сортируем
-    unique = set(tuple(sorted(comb)) for comb in combinations)
-    unique_combinations = [list(comb) for comb in sorted(unique)]
-
-    # оставляем только разложения длиной не более 4
-    return [comb for comb in unique_combinations if len(comb) <= 4]
+    return sorted(ordered_factorizations(n, 4))
 
 
 def pad_lists_with_ones(list_of_lists):
     """Дополняет каждый список единицами в начале до длины 4.
+
+    Сохранена для совместимости: compute_factorizations() теперь возвращает
+    разложения длины ровно 4, так что функция — тождественная.
 
     :param list_of_lists: список разложений.
     :return: список разложений, каждое длиной ровно 4.

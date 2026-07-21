@@ -7,7 +7,7 @@ from voronoi4d import (
     VoronoiPolyhedra,
     dist_to_s,
     find_optimal,
-    lattice_points_no_central_symmetry,
+    lattice_points_within,
     lll_reduce,
 )
 
@@ -27,19 +27,27 @@ def vor_d4():
     return vor
 
 
-def test_find_optimal_rejects_too_dense_sublattices(vor, tmp_path):
-    """Для Z^4 и det=4 минимальный вектор подрешётки короче диаметра — всё отбрасывается."""
+def test_find_optimal_threshold_semantics(vor, tmp_path):
+    """threshold управляет отбраковкой честно (до 1.1.0 порог 1 был зашит).
+
+    Для Z^4 и det=4 все подрешётки дают d < 1: с threshold=1.0 результат пуст,
+    с threshold=0.0 лучшая подрешётка возвращается с точным 0 < d < 1.
+    """
     grid = np.eye(4, dtype=float)
-    output_file = str(tmp_path / "results.txt")
 
     det_dist, det_center, det_mat = find_optimal(
         range(4, 5), 1, grid, vor, vor.max_len,
-        threshold=0.0, output_file=output_file, verbose=False,
+        threshold=1.0, output_file=str(tmp_path / "r1.txt"), verbose=False,
     )
+    assert det_dist == {} and det_center == {} and det_mat == {}
 
-    assert det_dist == {}
-    assert det_center == {}
-    assert det_mat == {}
+    det_dist, det_center, det_mat = find_optimal(
+        range(4, 5), 1, grid, vor, vor.max_len,
+        threshold=0.0, output_file=str(tmp_path / "r2.txt"), verbose=False,
+    )
+    # каждая подрешётка индекса 4 в Z^4 содержит единичный вектор — одноцветные
+    # кубы касаются, точный оптимум d = 0 (раньше фильтр это скрывал)
+    assert np.isclose(det_dist[4], 0.0, atol=1e-9)
 
 
 def test_find_optimal_smoke_d4(vor_d4, tmp_path):
@@ -67,13 +75,19 @@ def test_find_optimal_smoke_d4(vor_d4, tmp_path):
     content = open(output_file).read()
     assert "Determinant: 16" in content
 
+    # 2*D4 — оптимальная подрешётка индекса 16: точное значение d = sqrt(1/2)
+    assert np.isclose(det_dist[16], np.sqrt(0.5), atol=1e-9)
+
     # регрессия mat.copy(): пересчитываем расстояние по сохранённой матрице
+    # точным перебором в границе достаточности |v| < (d+1)*diam
     sub_grid = np.dot(mat, D4_GRID)
-    sub_grid_lll = lll_reduce(sub_grid, precision=3)
-    centers = lattice_points_no_central_symmetry(sub_grid_lll, 1, vor_d4.max_len)
+    sub_grid_lll = lll_reduce(sub_grid)
+    bound = (det_dist[16] + 1.0) * vor_d4.max_len
+    centers = lattice_points_within(sub_grid_lll, bound)
 
     recomputed = min(
-        dist_to_s(vor_d4, 0.5 * center, vor_d4.max_len) for center in centers
+        dist_to_s(vor_d4, 0.5 * center, vor_d4.max_len, early_stop=0.0)
+        for center in centers
     )
 
     assert np.isclose(recomputed, det_dist[16], atol=1e-9), \

@@ -114,29 +114,37 @@ class Face2D:
         self.bias = self.normal @ vertices[0]
 
     def _calculate_normal(self):
-        """Нормаль к грани: ортогональна плоскости грани и нормали родителя (SVD)."""
-        v1 = self.vertices[0] - self.vertices[1]
-        v2 = self.vertices[0] - self.vertices[2]
-        A = np.column_stack((v1, v2, self.parent_normal))
-        U, S, Vt = np.linalg.svd(A)
+        """Нормаль к грани: ортогональна плоскости грани и нормали родителя (SVD).
 
-        # вектор, ортогональный пространству столбцов A — последний столбец U
-        normal_candidate = U[:, -1]
+        Пары вершин перебираются до невырожденной конфигурации: порядок вершин
+        произволен (приходит из set-пересечений), и первая тройка может оказаться
+        почти коллинеарной — контроль по младшему сингулярному числу
+        (столбец ортогональной матрицы U всегда единичен, проверять его норму
+        бессмысленно — прежний «guard» был мёртвым кодом).
+        """
+        n_vert = len(self.vertices)
+        for j in range(1, n_vert):
+            for k in range(j + 1, n_vert):
+                v1 = self.vertices[0] - self.vertices[j]
+                v2 = self.vertices[0] - self.vertices[k]
+                A = np.column_stack((v1, v2, self.parent_normal))
+                U, S, _ = np.linalg.svd(A)
+                if S[-1] < TOL_DIRECTION:  # тройка (почти) вырождена — берём другую
+                    continue
 
-        norm_val = np.linalg.norm(normal_candidate)
-        if norm_val < TOL_DEGENERATE:  # защита от деления на ноль
-            self.normal = np.zeros_like(normal_candidate)
-            self.bias = 0.0
-            return
+                oriented_normal = U[:, -1]  # единичный вектор, ортогональный столбцам A
 
-        oriented_normal = normal_candidate / norm_val
+                # нормаль должна указывать "наружу" относительно центра родителя
+                vector_to_parent_center = self.parent_center - self.center
+                if np.dot(oriented_normal, vector_to_parent_center) > 0:
+                    self.normal = -oriented_normal
+                else:
+                    self.normal = oriented_normal
+                return
 
-        # нормаль должна указывать "наружу" относительно центра родителя
-        vector_to_parent_center = self.parent_center - self.center
-        if np.dot(oriented_normal, vector_to_parent_center) > 0:
-            self.normal = -oriented_normal
-        else:
-            self.normal = oriented_normal
+        # все тройки вырождены — дефектная грань
+        self.normal = np.zeros(len(self.vertices[0]))
+        self.bias = 0.0
 
     def _find_edge_coords(self):
         """Находит рёбра грани (пары координат вершин) по списку рёбер vor4."""
@@ -207,9 +215,10 @@ class VoronoiPolyhedra(Voronoi):
     и вспомогательные структуры для расчёта расстояний.
     """
 
-    # диапазон коэффициентов для генерации центров: меньше 3 нельзя —
-    # не хватает точек для корректного построения центрального региона
-    COEFF_RANGE = range(-3, 3)
+    # диапазон коэффициентов для генерации центров: СИММЕТРИЧНЫЙ (до 1.1.0 был
+    # несимметричный range(-3, 3) — облако центров не было центрально-симметричным);
+    # меньше +-3 нельзя — не хватает точек для корректного центрального региона
+    COEFF_RANGE = range(-3, 4)
 
     def __init__(self, grid):
         """
@@ -409,8 +418,38 @@ class VoronoiPolyhedra(Voronoi):
         )
         return max_len * 2
 
+    def _validate_cell(self):
+        """Решающие проверки построенной ячейки (см. AUDIT-2026-07-21, C3).
+
+        (a) Объём центрального региона обязан равняться |det(grid)| — иначе
+        облако центров COEFF_RANGE не покрыло все релевантные векторы решётки
+        и «ячейка» раздута (это происходит для скошенных, не LLL-приведённых
+        базисов). (b) Множество вершин обязано быть центрально-симметричным.
+        """
+        vol = ConvexHull(self.central).volume
+        det = abs(float(np.linalg.det(np.asarray(self.grid, dtype=float))))
+        if not np.isclose(vol, det, rtol=1e-6, atol=0.0):
+            raise ValueError(
+                f"объём построенной ячейки {vol:.12g} != |det(grid)| = {det:.12g}: "
+                "облако центров не покрывает релевантные векторы решётки — "
+                "примените lll_reduce к базису перед построением"
+            )
+        verts = np.asarray(self.central, dtype=float)
+        scale = max(1.0, float(np.abs(verts).max()))
+        for v in verts:
+            if not np.any(np.all(np.isclose(verts, -v, atol=1e-7 * scale), axis=1)):
+                raise ValueError(
+                    "множество вершин ячейки не центрально-симметрично — "
+                    "численный сбой построения (примените lll_reduce к базису)"
+                )
+
     def build(self, verbose=True):
-        """Полное построение всех структур разбиения."""
+        """Полное построение всех структур разбиения.
+
+        Бросает ValueError, если построенная ячейка не проходит решающие
+        проверки (объём = |det(grid)|, центральная симметрия) — вместо тихо
+        неверных результатов для неприведённых базисов.
+        """
         self.find_central(verbose=verbose)
         self.find_faces_3d()
         self.find_faces_2d()
@@ -423,4 +462,5 @@ class VoronoiPolyhedra(Voronoi):
         self.normalize_normals()
         self.create_polyhedrons()
         self.map_vertices_to_faces()
+        self._validate_cell()
         self.create_triangulation(verbose=verbose)

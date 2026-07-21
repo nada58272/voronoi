@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "voronoi4d"
-version = "1.0.0"  # единый источник версии (читается в __init__ через importlib.metadata)
+version = "1.1.0"  # единый источник версии (читается в __init__ через importlib.metadata)
 description = "Поиск хроматического числа R^4 через разбиения Вороного 4-мерных решёток"
 readme = "README.md"
 requires-python = ">=3.10"
